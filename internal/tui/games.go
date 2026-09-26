@@ -39,7 +39,7 @@ func (m model) viewGames() string {
 
 	if m.gamesErr != nil {
 		s += fmt.Sprintf("error: %v\n", m.gamesErr)
-		s += "\n(backspace to go back)\n"
+		s += "\n(esc/backspace to go back, q to quit)\n"
 		return s
 	}
 
@@ -62,7 +62,7 @@ func (m model) viewGames() string {
 	}
 
 	s += "\n(! = no valid game.conf, title guessed from folder)\n"
-	s += "(up/down to move, enter for details, backspace to go back)\n"
+	s += "(up/down to move, enter for details, backspace to go back, q to quit)\n"
 
 	return s
 }

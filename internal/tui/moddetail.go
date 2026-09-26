@@ -43,7 +43,7 @@ func (m model) viewModDetail() string {
 		s += wrapLabeled("optional:    ", mod.OptionalDepends, m.width)
 	}
 
-	s += "\n(backspace to go back)\n"
+	s += "\n(esc/backspace to go back, q to quit)\n"
 
 	return s
 }

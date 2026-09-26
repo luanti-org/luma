@@ -33,7 +33,7 @@ func (m model) viewGameDetail() string {
 	s += fmt.Sprintf("folder:      %s\n", game.Dir)
 	s += fmt.Sprintf("path:        %s\n", game.Path)
 
-	s += "\n(backspace to go back)\n"
+	s += "\n(esc/backspace to go back, q to quit)\n"
 
 	return s
 }

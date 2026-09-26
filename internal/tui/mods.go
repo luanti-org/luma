@@ -64,7 +64,7 @@ func (m model) viewMods() string {
 	}
 
 	s += "\n(P = modpack, ! = no valid mod.conf, name guessed from folder)\n"
-	s += "(up/down to move, enter for details, backspace to go back)\n"
+	s += "(up/down to move, enter for details, esc/backspace to go back, q to quit)\n"
 
 	return s
 }
