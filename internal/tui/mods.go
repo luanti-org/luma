@@ -21,7 +21,7 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.modsCursor++
 		}
 
-	case "enter":
+	case "enter", " ":
 		if m.modsErr == nil && len(m.mods) > 0 {
 			m.selectedMod = m.mods[m.modsCursor]
 			m.screen = screenModDetail

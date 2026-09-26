@@ -21,7 +21,7 @@ func (m model) updateGames(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.gamesCursor++
 		}
 
-	case "enter":
+	case "enter", " ":
 		if m.gamesErr == nil && len(m.games) > 0 {
 			m.selectedGame = m.games[m.gamesCursor]
 			m.screen = screenGameDetail

@@ -23,7 +23,7 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor++
 		}
 
-	case "enter":
+	case "enter", " ":
 		switch m.cursor {
 		case 0:
 			m.mods, m.modsErr = content.ScanMods(m.modsDir)
