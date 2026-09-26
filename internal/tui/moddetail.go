@@ -8,7 +8,7 @@ import (
 
 func (m model) updateModDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc":
+	case "q", "esc", "backspace":
 		m.screen = screenMods
 	}
 
@@ -40,7 +40,7 @@ func (m model) viewModDetail() string {
 		s += wrapLabeled("optional:    ", mod.OptionalDepends, m.width)
 	}
 
-	s += "\n(q to go back)\n"
+	s += "\n(backspace to go back)\n"
 
 	return s
 }

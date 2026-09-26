@@ -8,7 +8,7 @@ import (
 
 func (m model) updateGameDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc":
+	case "q", "esc", "backspace":
 		m.screen = screenGames
 	}
 
@@ -30,7 +30,7 @@ func (m model) viewGameDetail() string {
 	s += fmt.Sprintf("folder:      %s\n", game.Dir)
 	s += fmt.Sprintf("path:        %s\n", game.Path)
 
-	s += "\n(q to go back)\n"
+	s += "\n(backspace to go back)\n"
 
 	return s
 }

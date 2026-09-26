@@ -8,7 +8,7 @@ import (
 
 func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc":
+	case "q", "esc", "backspace":
 		m.screen = screenMenu
 
 	case "up", "k":
@@ -36,7 +36,7 @@ func (m model) viewMods() string {
 
 	if m.modsErr != nil {
 		s += fmt.Sprintf("error: %v\n", m.modsErr)
-		s += "\n(q to go back)\n"
+		s += "\n(backspace to go back)\n"
 		return s
 	}
 
@@ -61,7 +61,7 @@ func (m model) viewMods() string {
 	}
 
 	s += "\n(P = modpack, ! = no valid mod.conf, name guessed from folder)\n"
-	s += "(up/down to move, enter for details, q to go back)\n"
+	s += "(up/down to move, enter for details, backspace to go back)\n"
 
 	return s
 }
