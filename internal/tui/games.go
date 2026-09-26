@@ -8,7 +8,10 @@ import (
 
 func (m model) updateGames(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc", "backspace":
+	case "q":
+		return m, tea.Quit
+
+	case "esc", "backspace":
 		m.screen = screenMenu
 
 	case "up", "k":
