@@ -1,6 +1,6 @@
 # Roadmap
 
-Rough goals for luanti-contentdb-cli. Order and scope may change.
+Rough goals for luma. Order and scope may change.
 
 The tool covers the ContentDB and world/server management side of Luanti dev tooling.
 

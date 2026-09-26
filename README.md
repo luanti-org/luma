@@ -1,4 +1,4 @@
-# luanti-contentdb-cli
+# luma
 
 A terminal UI for managing Luanti mods and games, with ContentDB integration.
 

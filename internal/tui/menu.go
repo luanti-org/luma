@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenonSeth/luanti-contentdb-cli/internal/content"
+	"github.com/luanti-org/luma/internal/content"
 )
 
 func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -1,4 +1,4 @@
-module github.com/ZenonSeth/luanti-contentdb-cli
+module github.com/luanti-org/luma
 
 go 1.24.0
 

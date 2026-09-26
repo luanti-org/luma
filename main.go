@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/ZenonSeth/luanti-contentdb-cli/internal/tui"
+	"github.com/luanti-org/luma/internal/tui"
 )
 
 func main() {
