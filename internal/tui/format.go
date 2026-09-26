@@ -2,6 +2,20 @@ package tui
 
 import "strings"
 
+// truncate cuts s to at most width runes; width <= 0 disables it.
+func truncate(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+
+	r := []rune(s)
+	if len(r) <= width {
+		return s
+	}
+
+	return string(r[:width])
+}
+
 // wrapText breaks text into lines no wider than width, breaking on
 // word boundaries. width <= 0 disables wrapping (single line).
 func wrapText(text string, width int) []string {

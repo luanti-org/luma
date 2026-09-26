@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -47,7 +48,11 @@ func (m model) viewMods() string {
 		s += "(no mods found)\n"
 	}
 
-	for i, mod := range m.mods {
+	rows := m.listRows(6)
+	start, end := listWindow(m.modsCursor, len(m.mods), rows)
+
+	for i := start; i < end; i++ {
+		mod := m.mods[i]
 		cursor := " "
 		if m.modsCursor == i {
 			cursor = ">"
@@ -60,11 +65,21 @@ func (m model) viewMods() string {
 			tag = "[!]" // missing/malformed mod.conf, name is a folder-name guess
 		}
 
-		s += fmt.Sprintf("%s %s %s\n", cursor, tag, mod.Name)
+		s += truncate(fmt.Sprintf("%s %s %s", cursor, tag, mod.Name), m.width) + "\n"
 	}
 
-	s += "\n(P = modpack, ! = no valid mod.conf, name guessed from folder)\n"
-	s += "(up/down to move, enter for details, esc/backspace to go back, q to quit)\n"
+	pad := rows - (end - start)
+	if len(m.mods) == 0 {
+		pad-- // the "no ... found" line
+	}
+
+	s += strings.Repeat("\n", pad)
+	if end-start < len(m.mods) {
+		s += fmt.Sprintf("(%d-%d of %d)", start+1, end, len(m.mods))
+	}
+
+	s += "\n\n(P = modpack, ! = no valid mod.conf, name guessed from folder)\n"
+	s += "(up/down to move, enter for details, esc/backspace to go back, q to quit)"
 
 	return s
 }

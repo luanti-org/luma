@@ -20,8 +20,11 @@ const (
 	screenGameDetail
 )
 
-// defaultWidth is used until the first tea.WindowSizeMsg arrives.
-const defaultWidth = 80
+// Used until the first tea.WindowSizeMsg arrives.
+const (
+	defaultWidth  = 80
+	defaultHeight = 24
+)
 
 type model struct {
 	screen   screen
@@ -30,6 +33,7 @@ type model struct {
 	modsDir  string
 	gamesDir string
 	width    int
+	height   int
 
 	mods       []content.Mod
 	modsErr    error
@@ -44,7 +48,7 @@ type model struct {
 	selectedGame content.Game
 }
 
-// New returns the initial TUI model, ready to pass to tea.NewProgram.
+// New returns the initial TUI model, ready to pass to tea.NewProgram
 func New(modsDir, gamesDir string) model {
 	return model{
 		screen:   screenMenu,
@@ -53,6 +57,7 @@ func New(modsDir, gamesDir string) model {
 		modsDir:  modsDir,
 		gamesDir: gamesDir,
 		width:    defaultWidth,
+		height:   defaultHeight,
 	}
 }
 
@@ -63,6 +68,7 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = sizeMsg.Width
+		m.height = sizeMsg.Height
 		return m, nil
 	}
 
@@ -104,4 +110,21 @@ func (m model) View() string {
 	default:
 		return m.viewMenu()
 	}
+}
+
+// listRows is how many list rows fit once chrome lines are reserved
+func (m model) listRows(chrome int) int {
+	return max(m.height-chrome, 1)
+}
+
+// listWindow returns the [start, end) slice of items to show,
+// keeping the cursor roughly centered
+func listWindow(cursor, total, rows int) (int, int) {
+	if total <= rows {
+		return 0, total
+	}
+
+	start := min(max(cursor-rows/2, 0), total-rows)
+
+	return start, start + rows
 }

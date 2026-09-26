@@ -18,7 +18,7 @@ func main() {
 	modsDir := filepath.Join(*root, "mods")
 	gamesDir := filepath.Join(*root, "games")
 
-	p := tea.NewProgram(tui.New(modsDir, gamesDir))
+	p := tea.NewProgram(tui.New(modsDir, gamesDir), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Println("error running program:", err)
 		os.Exit(1)

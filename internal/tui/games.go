@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -47,7 +48,11 @@ func (m model) viewGames() string {
 		s += "(no games found)\n"
 	}
 
-	for i, game := range m.games {
+	rows := m.listRows(6)
+	start, end := listWindow(m.gamesCursor, len(m.games), rows)
+
+	for i := start; i < end; i++ {
+		game := m.games[i]
 		cursor := " "
 		if m.gamesCursor == i {
 			cursor = ">"
@@ -58,11 +63,21 @@ func (m model) viewGames() string {
 			tag = "[!]" // missing/malformed game.conf, title guessed from folder
 		}
 
-		s += fmt.Sprintf("%s %s %s\n", cursor, tag, game.Title)
+		s += truncate(fmt.Sprintf("%s %s %s", cursor, tag, game.Title), m.width) + "\n"
 	}
 
-	s += "\n(! = no valid game.conf, title guessed from folder)\n"
-	s += "(up/down to move, enter for details, backspace to go back, q to quit)\n"
+	pad := rows - (end - start)
+	if len(m.games) == 0 {
+		pad-- // the "no ... found" line
+	}
+
+	s += strings.Repeat("\n", pad)
+	if end-start < len(m.games) {
+		s += fmt.Sprintf("(%d-%d of %d)", start+1, end, len(m.games))
+	}
+
+	s += "\n\n(! = no valid game.conf, title guessed from folder)\n"
+	s += "(up/down to move, enter for details, esc/backspace to go back, q to quit)"
 
 	return s
 }
