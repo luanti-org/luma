@@ -3,6 +3,8 @@ package content
 import (
 	"os"
 	"path/filepath"
+
+	"github.com/luanti-org/luma/internal/util"
 )
 
 // Game describes one game folder found under a games directory.
@@ -61,7 +63,7 @@ func scanGameDir(dir, path string) Game {
 		return g
 	}
 
-	conf := parseConfFile(data)
+	conf := util.ParseConfFile(data)
 
 	title := conf["title"]
 	if title == "" {
@@ -74,7 +76,7 @@ func scanGameDir(dir, path string) Game {
 
 	g.Description = conf["description"]
 	g.Author = conf["author"]
-	g.Release = parseIntField(conf, "release")
+	g.Release = util.ParseIntField(conf, "release")
 
 	return g
 }

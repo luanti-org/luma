@@ -3,11 +3,10 @@
 package content
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
+
+	"github.com/luanti-org/luma/internal/util"
 )
 
 // Mod describes one mod folder found under a mods directory.
@@ -49,7 +48,7 @@ func ScanMods(dir string) ([]Mod, error) {
 		modDir := entry.Name()
 		modPath := filepath.Join(dir, modDir)
 
-		if fileExists(filepath.Join(modPath, "modpack.conf")) {
+		if util.FileExists(filepath.Join(modPath, "modpack.conf")) {
 			mods = append(mods, Mod{
 				Name:      modDir,
 				Dir:       modDir,
@@ -78,7 +77,7 @@ func scanModDir(dir, path string) Mod {
 		return m
 	}
 
-	conf := parseConfFile(data)
+	conf := util.ParseConfFile(data)
 
 	name, ok := conf["name"]
 	if ok && name != "" {
@@ -89,65 +88,9 @@ func scanModDir(dir, path string) Mod {
 	m.Title = conf["title"]
 	m.Description = conf["description"]
 	m.Author = conf["author"]
-	m.Release = parseIntField(conf, "release")
-	m.Depends = splitList(conf["depends"])
-	m.OptionalDepends = splitList(conf["optional_depends"])
+	m.Release = util.ParseIntField(conf, "release")
+	m.Depends = util.SplitList(conf["depends"])
+	m.OptionalDepends = util.SplitList(conf["optional_depends"])
 
 	return m
-}
-
-// parseConfFile parses a Luanti "Settings" style file:
-// one `key = value` per line
-func parseConfFile(data []byte) map[string]string {
-	result := make(map[string]string)
-
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		key, value, found := strings.Cut(line, "=")
-		if !found {
-			continue
-		}
-
-		result[strings.TrimSpace(key)] = strings.TrimSpace(value)
-	}
-
-	return result
-}
-
-// parseIntField reads an integer field from a parsed conf map,
-// defaulting to 0 if the key is missing or not a valid integer.
-func parseIntField(conf map[string]string, key string) int {
-	n, err := strconv.Atoi(conf[key])
-	if err != nil {
-		return 0
-	}
-	return n
-}
-
-// splitList splits a comma-separated mod.conf list field (depends,
-// optional_depends), trimming whitespace and dropping empty entries.
-func splitList(value string) []string {
-	if value == "" {
-		return nil
-	}
-
-	var out []string
-	for _, item := range strings.Split(value, ",") {
-		item = strings.TrimSpace(item)
-		if item != "" {
-			out = append(out, item)
-		}
-	}
-
-	return out
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
 }
