@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/luanti-org/luma/internal/content"
+	"github.com/luanti-org/luma/internal/engine"
 )
 
 type screen int
@@ -27,13 +28,12 @@ const (
 )
 
 type model struct {
-	screen   screen
-	cursor   int
-	choices  []string
-	modsDir  string
-	gamesDir string
-	width    int
-	height   int
+	screen  screen
+	cursor  int
+	choices []string
+	engInfo engine.Info
+	width   int
+	height  int
 
 	mods       []content.Mod
 	modsErr    error
@@ -48,16 +48,15 @@ type model struct {
 	selectedGame content.Game
 }
 
-// New returns the initial TUI model, ready to pass to tea.NewProgram
-func New(modsDir, gamesDir string) model {
+// New returns the initial TUI model, ready to pass to tea.NewProgram.
+func New(engInfo engine.Info) model {
 	return model{
-		screen:   screenMenu,
-		cursor:   0,
-		choices:  []string{"Manage mods", "Manage games", "Quit"},
-		modsDir:  modsDir,
-		gamesDir: gamesDir,
-		width:    defaultWidth,
-		height:   defaultHeight,
+		screen:  screenMenu,
+		cursor:  0,
+		choices: []string{"Manage mods", "Manage games", "Quit"},
+		engInfo: engInfo,
+		width:   defaultWidth,
+		height:  defaultHeight,
 	}
 }
 

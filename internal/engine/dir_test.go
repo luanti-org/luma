@@ -60,6 +60,9 @@ func TestDetectDir(t *testing.T) {
 	if info.Version != "5.17.0" || info.Protocol != 53 {
 		t.Errorf("info = %+v, want 5.17.0 / 53", info)
 	}
+	if info.ModsDir != filepath.Join(dir, "mods") || info.GamesDir != filepath.Join(dir, "games") {
+		t.Errorf("info = %+v, want ModsDir/GamesDir under %s", info, dir)
+	}
 }
 
 func TestDetectDirDevBuild(t *testing.T) {
@@ -79,8 +82,13 @@ func TestDetectDirDevBuild(t *testing.T) {
 
 func TestDetectDirNoBinary(t *testing.T) {
 	dir := newInstall(t, "")
-	if _, err := DetectDir(dir); !errors.Is(err, ErrNoBinary) {
+	info, err := DetectDir(dir)
+	if !errors.Is(err, ErrNoBinary) {
 		t.Errorf("err = %v, want ErrNoBinary", err)
+	}
+	// content scanning shouldn't depend on the engine binary being found
+	if info.ModsDir != filepath.Join(dir, "mods") || info.GamesDir != filepath.Join(dir, "games") {
+		t.Errorf("info = %+v, want ModsDir/GamesDir still set under %s", info, dir)
 	}
 }
 

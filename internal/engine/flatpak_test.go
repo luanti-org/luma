@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,6 +52,12 @@ func TestDetectFlatpak(t *testing.T) {
 	if info.Version == "" || info.Protocol == 0 {
 		t.Errorf("info = %+v, want both fields set", info)
 	}
+
+	home, _ := os.UserHomeDir()
+	wantMods := filepath.Join(home, ".var", "app", DefaultFlatpakAppID, ".minetest", "mods")
+	if info.ModsDir != wantMods {
+		t.Errorf("ModsDir = %q, want %q", info.ModsDir, wantMods)
+	}
 }
 
 func TestDetectFlatpakUnknownApp(t *testing.T) {
@@ -56,8 +65,13 @@ func TestDetectFlatpakUnknownApp(t *testing.T) {
 		t.Skip("flatpak not installed")
 	}
 
-	if _, err := DetectFlatpak("org.example.doesnotexist"); err == nil {
+	// content scanning shouldn't depend on the app actually being installed
+	info, err := DetectFlatpak("org.example.doesnotexist")
+	if err == nil {
 		t.Error("expected error for an app that isn't installed")
+	}
+	if !strings.Contains(info.ModsDir, "org.example.doesnotexist") {
+		t.Errorf("ModsDir = %q, want it to still be set for the given app ID", info.ModsDir)
 	}
 }
 

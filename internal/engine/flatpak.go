@@ -21,14 +21,27 @@ var (
 	ErrFlatpakAppNotFound = errors.New("engine: flatpak app is not installed")
 )
 
-// DetectFlatpak reads the version and protocol version of appID as installed via flatpak
+// DetectFlatpak reads the version and protocol version of appID as installed via flatpak.
+// ModsDir/GamesDir are always set, even if the version/protocol can't be read,
+// since content scanning doesn't depend on the engine binary being detectable.
 func DetectFlatpak(appID string) (Info, error) {
-	version, err := FlatpakVersion(appID)
-	if err != nil {
-		return Info{}, err
+	info := Info{ViaFlatpak: true}
+	if home, err := os.UserHomeDir(); err == nil {
+		// flatpak apps get their own HOME, set via MINETEST_USER_PATH in
+		// the launcher script inside the sandbox; confirmed for org.luanti.luanti
+		userPath := filepath.Join(home, ".var", "app", appID, ".minetest")
+		info.ModsDir = filepath.Join(userPath, "mods")
+		info.GamesDir = filepath.Join(userPath, "games")
+	}
+	if loc, err := flatpakLocation(appID); err == nil {
+		info.Source = filepath.Join(loc, "files")
 	}
 
-	info := Info{Version: version}
+	version, err := FlatpakVersion(appID)
+	if err != nil {
+		return info, err
+	}
+	info.Version = version
 
 	table, err := FlatpakProtocolTable(appID)
 	if err != nil {

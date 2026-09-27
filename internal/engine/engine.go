@@ -15,8 +15,12 @@ import (
 var ErrProtocolUnknown = errors.New("engine: protocol version unknown for this engine version")
 
 type Info struct {
-	Version  string // as printed by --version e.g. "5.17.0"
-	Protocol int    // 0 if unknown
+	Version    string // as printed by --version e.g. "5.17.0"
+	Protocol   int    // 0 if unknown
+	Source     string // full path to the engine's own install root
+	ModsDir    string // where this install's mods live
+	GamesDir   string // where this install's games live
+	ViaFlatpak bool   // true if Source is a flatpak install
 }
 
 var (
@@ -24,8 +28,9 @@ var (
 	protocolEntry = regexp.MustCompile(`\["(\d+\.\d+\.\d+)"\]\s*=\s*(\d+)`)
 )
 
-// Detect tries DetectDir(dir) first, falling back to DetectFlatpak(DefaultFlatpakAppID) if dir has no binary
-// returns the Version and Protocol struct
+// Detect tries DetectDir(dir) first, falling back to DetectFlatpak(DefaultFlatpakAppID) if dir has no binary.
+// Call DetectDir directly when dir was explicitly given,
+// so a bad dir doesn't silently get assumed by a flatpak install
 func Detect(dir string) (Info, error) {
 	info, err := DetectDir(dir)
 	if !errors.Is(err, ErrNoBinary) {
@@ -33,6 +38,17 @@ func Detect(dir string) (Info, error) {
 	}
 
 	return DetectFlatpak(DefaultFlatpakAppID)
+}
+
+// DetectAuto is Detect, except the flatpak fallback is skipped when
+// dirExplicit is true (the caller was actually given a dir, rather than
+// using some placeholder/default).
+func DetectAuto(dir string, dirExplicit bool) (Info, error) {
+	if dirExplicit {
+		return DetectDir(dir)
+	}
+
+	return Detect(dir)
 }
 
 const protocolTableStart = "core.protocol_versions = {"

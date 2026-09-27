@@ -16,14 +16,25 @@ var ErrNoBinary = errors.New("engine: no luanti or minetest binary found in bin/
 // Windows names are also tried
 var binaryNames = []string{"luanti", "luanti.exe", "minetest", "minetest.exe"}
 
-// DetectDir reads the version and protocol version of the plain-directory install at `dir`
+// DetectDir reads the version and protocol version of the plain-directory install at `dir`.
+// ModsDir/GamesDir are always set, even if the version/protocol can't be read,
+// since content scanning doesn't depend on the engine binary being detectable.
 func DetectDir(dir string) (Info, error) {
-	version, err := ReadVersion(dir)
-	if err != nil {
-		return Info{}, err
+	root := dir
+	if abs, err := filepath.Abs(dir); err == nil {
+		root = abs
+	}
+	info := Info{
+		Source:   root,
+		ModsDir:  filepath.Join(root, "mods"),
+		GamesDir: filepath.Join(root, "games"),
 	}
 
-	info := Info{Version: version}
+	version, err := ReadVersion(dir)
+	if err != nil {
+		return info, err
+	}
+	info.Version = version
 
 	table, err := ReadProtocolTable(dir)
 	if err != nil {

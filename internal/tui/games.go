@@ -36,7 +36,7 @@ func (m model) updateGames(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewGames() string {
-	s := fmt.Sprintf("games in %s\n\n", m.gamesDir)
+	s := fmt.Sprintf("games in %s\n\n", m.engInfo.GamesDir)
 
 	if m.gamesErr != nil {
 		s += fmt.Sprintf("error: %v\n", m.gamesErr)

@@ -36,7 +36,7 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewMods() string {
-	s := fmt.Sprintf("mods in %s\n\n", m.modsDir)
+	s := fmt.Sprintf("mods in %s\n\n", m.engInfo.ModsDir)
 
 	if m.modsErr != nil {
 		s += fmt.Sprintf("error: %v\n", m.modsErr)
