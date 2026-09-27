@@ -24,8 +24,9 @@ type Info struct {
 }
 
 var (
-	versionLine   = regexp.MustCompile(`^(?:Luanti|Minetest)\s+(\S+)`)
-	protocolEntry = regexp.MustCompile(`\["(\d+\.\d+\.\d+)"\]\s*=\s*(\d+)`)
+	versionLine    = regexp.MustCompile(`^(?:Luanti|Minetest)\s+(\S+)`)
+	runInPlaceLine = regexp.MustCompile(`^RUN_IN_PLACE=(\d)`)
+	protocolEntry  = regexp.MustCompile(`\["(\d+\.\d+\.\d+)"\]\s*=\s*(\d+)`)
 )
 
 // Detect tries DetectDir(dir) first, falling back to DetectFlatpak(DefaultFlatpakAppID) if dir has no binary.
@@ -62,6 +63,18 @@ func parseVersionOutput(out string) (string, error) {
 	}
 
 	return "", fmt.Errorf("engine: no version line in --version output: %q", out)
+}
+
+// parseRunInPlace reads the RUN_IN_PLACE=0/1 line from --version output.
+// ok is false if the line isn't present.
+func parseRunInPlace(out string) (runInPlace, ok bool) {
+	for _, line := range strings.Split(out, "\n") {
+		if m := runInPlaceLine.FindStringSubmatch(strings.TrimSpace(line)); m != nil {
+			return m[1] == "1", true
+		}
+	}
+
+	return false, false
 }
 
 // parseProtocolTable extracts core.protocol_versions from the text of a misc_s.lua file

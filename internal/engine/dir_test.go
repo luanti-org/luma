@@ -80,6 +80,48 @@ func TestDetectDirDevBuild(t *testing.T) {
 	}
 }
 
+func TestUserDataPath(t *testing.T) {
+	t.Setenv("LUANTI_USER_PATH", "/from/luanti-env")
+	t.Setenv("MINETEST_USER_PATH", "/from/minetest-env")
+	if got, err := userDataPath(); err != nil || got != "/from/luanti-env" {
+		t.Errorf("userDataPath() = %q, %v; want /from/luanti-env (LUANTI_USER_PATH wins)", got, err)
+	}
+
+	t.Setenv("LUANTI_USER_PATH", "")
+	if got, err := userDataPath(); err != nil || got != "/from/minetest-env" {
+		t.Errorf("userDataPath() = %q, %v; want /from/minetest-env (deprecated fallback)", got, err)
+	}
+
+	t.Setenv("MINETEST_USER_PATH", "")
+	got, err := userDataPath()
+	if err != nil {
+		t.Fatalf("userDataPath: %v", err)
+	}
+	if got == "" {
+		t.Error("userDataPath() with no env vars set is empty, want a per-OS default")
+	}
+}
+
+func TestDetectDirNotRunInPlace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a stand-in binary")
+	}
+
+	t.Setenv("LUANTI_USER_PATH", "")
+	t.Setenv("MINETEST_USER_PATH", filepath.Join(t.TempDir(), "user-path"))
+
+	dir := newInstall(t, "Luanti 5.17.0 (Linux)\nRUN_IN_PLACE=0")
+	info, err := DetectDir(dir)
+	if err != nil {
+		t.Fatalf("DetectDir: %v", err)
+	}
+
+	want := os.Getenv("MINETEST_USER_PATH")
+	if info.ModsDir != filepath.Join(want, "mods") || info.GamesDir != filepath.Join(want, "games") {
+		t.Errorf("info = %+v, want ModsDir/GamesDir under %s (MINETEST_USER_PATH), not %s", info, want, dir)
+	}
+}
+
 func TestDetectDirNoBinary(t *testing.T) {
 	dir := newInstall(t, "")
 	info, err := DetectDir(dir)

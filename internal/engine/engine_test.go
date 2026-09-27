@@ -28,6 +28,27 @@ func TestParseVersionOutput(t *testing.T) {
 	}
 }
 
+func TestParseRunInPlace(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want bool
+		ok   bool
+	}{
+		{"in place", "Luanti 5.17.0 (Windows)\nBUILD_TYPE=Release\nRUN_IN_PLACE=1\n", true, true},
+		{"not in place", "Luanti 5.17.0 (Linux)\nBUILD_TYPE=Release\nRUN_IN_PLACE=0\n", false, true},
+		{"absent", "Luanti 5.17.0 (Linux)\n", false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := parseRunInPlace(tt.out)
+			if got != tt.want || ok != tt.ok {
+				t.Errorf("parseRunInPlace(...) = %v, %v; want %v, %v", got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
 const miscS = `
 local other = {
 	["9.9.9"] = 1,

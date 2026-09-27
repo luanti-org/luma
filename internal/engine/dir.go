@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 )
 
@@ -33,11 +34,25 @@ func DetectDir(dir string) (Info, error) {
 		GamesDir: filepath.Join(root, "games"),
 	}
 
-	version, err := ReadVersion(dir)
+	out, err := readVersionOutput(dir)
+	if err != nil {
+		return info, err
+	}
+
+	version, err := parseVersionOutput(out)
 	if err != nil {
 		return info, err
 	}
 	info.Version = version
+
+	// dir/mods, dir/games only hold if the binary was built RUN_IN_PLACE
+	// otherwise user content lives at the engine's own user path
+	if runInPlace, ok := parseRunInPlace(out); ok && !runInPlace {
+		if userPath, err := userDataPath(); err == nil {
+			info.ModsDir = filepath.Join(userPath, "mods")
+			info.GamesDir = filepath.Join(userPath, "games")
+		}
+	}
 
 	table, err := ReadProtocolTable(dir)
 	if err != nil {
@@ -55,6 +70,17 @@ func DetectDir(dir string) (Info, error) {
 
 // ReadVersion runs the install's binary with --version and parses the result.
 func ReadVersion(dir string) (string, error) {
+	out, err := readVersionOutput(dir)
+	if err != nil {
+		return "", err
+	}
+
+	return parseVersionOutput(out)
+}
+
+// readVersionOutput runs the install's binary with --version and returns
+// its raw output, e.g. for parseRunInPlace as well as parseVersionOutput.
+func readVersionOutput(dir string) (string, error) {
 	path, err := findBinary(dir)
 	if err != nil {
 		return "", err
@@ -67,7 +93,32 @@ func ReadVersion(dir string) (string, error) {
 		return "", fmt.Errorf("engine: running %s --version: %w", path, err)
 	}
 
-	return parseVersionOutput(string(out))
+	return string(out), nil
+}
+
+// userDataPath resolves Luanti's user data path outside RUN_IN_PLACE,
+// matching porting::getUserPathEnvVar() and its per-OS defaults
+func userDataPath() (string, error) {
+	if p := os.Getenv("LUANTI_USER_PATH"); p != "" {
+		return p, nil
+	}
+	if p := os.Getenv("MINETEST_USER_PATH"); p != "" {
+		return p, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	switch runtime.GOOS {
+	case "windows":
+		return filepath.Join(os.Getenv("APPDATA"), "Luanti"), nil
+	case "darwin":
+		return filepath.Join(home, "Library", "Application Support", "minetest"), nil
+	default:
+		return filepath.Join(home, ".minetest"), nil
+	}
 }
 
 // findBinary checks dir/bin/<name> first,
