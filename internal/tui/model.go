@@ -5,11 +5,19 @@
 package tui
 
 import (
+	"net/http"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/luanti-org/luma/internal/content"
+	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
+	"github.com/luanti-org/luma/internal/update"
 )
+
+// cdbRequestTimeout bounds how long a ContentDB request go before timing out
+const cdbRequestTimeout = 30 * time.Second
 
 type screen int
 
@@ -34,12 +42,18 @@ type model struct {
 	cursor  int
 	choices []string
 	engInfo engine.Info
+	cdb     *contentdb.Client
 	width   int
 	height  int
 
 	mods       []content.Mod
 	modsErr    error
 	modsCursor int
+
+	modsChecking    bool
+	modsLastChecked time.Time
+	modsUpdateErr   error
+	modUpdates      []update.ModUpdate
 
 	selectedMod content.Mod
 
@@ -58,11 +72,15 @@ type model struct {
 
 // New returns the initial TUI model, ready to pass to tea.NewProgram.
 func New(engInfo engine.Info) model {
+	cdb := contentdb.New("")
+	cdb.HTTPClient = &http.Client{Timeout: cdbRequestTimeout} // don't share/mutate http.DefaultClient
+
 	return model{
 		screen:  screenMenu,
 		cursor:  0,
 		choices: []string{"Manage mods", "Manage games", "Manage texture packs", "Quit"},
 		engInfo: engInfo,
+		cdb:     cdb,
 		width:   defaultWidth,
 		height:  defaultHeight,
 	}
@@ -76,6 +94,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if sizeMsg, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = sizeMsg.Width
 		m.height = sizeMsg.Height
+		return m, nil
+	}
+
+	if checkedMsg, ok := msg.(modUpdatesCheckedMsg); ok {
+		m.modsChecking = false
+		m.modsUpdateErr = checkedMsg.err
+		if checkedMsg.err == nil {
+			m.modsLastChecked = time.Now()
+			m.modUpdates = checkedMsg.updates
+		}
 		return m, nil
 	}
 

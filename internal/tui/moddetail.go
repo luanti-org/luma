@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/luanti-org/luma/internal/util"
 )
 
 func (m model) updateModDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -13,6 +15,9 @@ func (m model) updateModDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "esc", "backspace":
 		m.screen = screenMods
+
+	case "u":
+		// TODO: hook up to an actual download + install api
 	}
 
 	return m, nil
@@ -41,6 +46,10 @@ func (m model) viewModDetail() string {
 	}
 	if len(mod.OptionalDepends) > 0 {
 		s += wrapLabeled("optional:    ", mod.OptionalDepends, m.width)
+	}
+
+	if m.modHasUpdate(mod) {
+		s += "\n" + util.UpdateTagStyle.Render("Update available, press u to update") + "\n"
 	}
 
 	s += "\n(esc/backspace to go back, q to quit)\n"
