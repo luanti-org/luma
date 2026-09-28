@@ -32,6 +32,7 @@ func DetectFlatpak(appID string) (Info, error) {
 		userPath := filepath.Join(home, ".var", "app", appID, ".minetest")
 		info.ModsDir = filepath.Join(userPath, "mods")
 		info.GamesDir = filepath.Join(userPath, "games")
+		info.TexturesDir = filepath.Join(userPath, "textures")
 	}
 	if loc, err := flatpakLocation(appID); err == nil {
 		info.Source = filepath.Join(loc, "files")

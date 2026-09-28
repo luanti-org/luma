@@ -19,6 +19,8 @@ const (
 	screenModDetail
 	screenGames
 	screenGameDetail
+	screenTexturepacks
+	screenTexturepackDetail
 )
 
 // Used until the first tea.WindowSizeMsg arrives.
@@ -46,6 +48,12 @@ type model struct {
 	gamesCursor int
 
 	selectedGame content.Game
+
+	texturepacks       []content.Texturepack
+	texturepacksErr    error
+	texturepacksCursor int
+
+	selectedTexturepack content.Texturepack
 }
 
 // New returns the initial TUI model, ready to pass to tea.NewProgram.
@@ -53,7 +61,7 @@ func New(engInfo engine.Info) model {
 	return model{
 		screen:  screenMenu,
 		cursor:  0,
-		choices: []string{"Manage mods", "Manage games", "Quit"},
+		choices: []string{"Manage mods", "Manage games", "Manage texture packs", "Quit"},
 		engInfo: engInfo,
 		width:   defaultWidth,
 		height:  defaultHeight,
@@ -91,6 +99,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateGames(keyMsg)
 	case screenGameDetail:
 		return m.updateGameDetail(keyMsg)
+	case screenTexturepacks:
+		return m.updateTexturepacks(keyMsg)
+	case screenTexturepackDetail:
+		return m.updateTexturepackDetail(keyMsg)
 	}
 
 	return m, nil
@@ -106,6 +118,10 @@ func (m model) View() string {
 		return m.viewGames()
 	case screenGameDetail:
 		return m.viewGameDetail()
+	case screenTexturepacks:
+		return m.viewTexturepacks()
+	case screenTexturepackDetail:
+		return m.viewTexturepackDetail()
 	default:
 		return m.viewMenu()
 	}

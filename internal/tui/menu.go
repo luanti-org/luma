@@ -33,6 +33,9 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.games, m.gamesErr = content.ScanGames(m.engInfo.GamesDir)
 			m.screen = screenGames
 		case 2:
+			m.texturepacks, m.texturepacksErr = content.ScanTextures(m.engInfo.TexturesDir)
+			m.screen = screenTexturepacks
+		case 3:
 			return m, tea.Quit
 		}
 	}
@@ -53,6 +56,7 @@ func (m model) viewMenu() string {
 
 	s += fmt.Sprintf("\nmods dir:  %s\n", m.engInfo.ModsDir)
 	s += fmt.Sprintf("games dir: %s\n", m.engInfo.GamesDir)
+	s += fmt.Sprintf("textures dir: %s\n", m.engInfo.TexturesDir)
 	s += fmt.Sprintf("engine:    %s\n", formatEngineInfo(m.engInfo))
 	s += "\n(up/down to move, enter to select, q to quit)\n"
 

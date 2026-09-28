@@ -29,9 +29,10 @@ func DetectDir(dir string) (Info, error) {
 		root = abs
 	}
 	info := Info{
-		Source:   root,
-		ModsDir:  filepath.Join(root, "mods"),
-		GamesDir: filepath.Join(root, "games"),
+		Source:      root,
+		ModsDir:     filepath.Join(root, "mods"),
+		GamesDir:    filepath.Join(root, "games"),
+		TexturesDir: filepath.Join(root, "textures"),
 	}
 
 	out, err := readVersionOutput(dir)
@@ -51,6 +52,7 @@ func DetectDir(dir string) (Info, error) {
 		if userPath, err := userDataPath(); err == nil {
 			info.ModsDir = filepath.Join(userPath, "mods")
 			info.GamesDir = filepath.Join(userPath, "games")
+			info.TexturesDir = filepath.Join(userPath, "textures")
 		}
 	}
 

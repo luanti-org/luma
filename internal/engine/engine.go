@@ -15,12 +15,13 @@ import (
 var ErrProtocolUnknown = errors.New("engine: protocol version unknown for this engine version")
 
 type Info struct {
-	Version    string // as printed by --version e.g. "5.17.0"
-	Protocol   int    // 0 if unknown
-	Source     string // full path to the engine's own install root
-	ModsDir    string // where this install's mods live
-	GamesDir   string // where this install's games live
-	ViaFlatpak bool   // true if Source is a flatpak install
+	Version     string // as printed by --version e.g. "5.17.0"
+	Protocol    int    // 0 if unknown
+	Source      string // full path to the engine's own install root
+	ModsDir     string // where this install's mods live
+	GamesDir    string // where this install's games live
+	TexturesDir string //where this install's texture packs live
+	ViaFlatpak  bool   // true if Source is a flatpak install
 }
 
 var (
