@@ -21,17 +21,17 @@ type Mod struct {
 
 	Dir       string // folder name, e.g. "everness"
 	Path      string // full path to the mod folder
-	IsModpack bool   // has modpack.conf instead of mod.conf; not scanned further yet
+	IsModpack bool   // parsed from modpack.conf instead of mod.conf - nested mods not scanned yet
 
-	// ConfOK is true only if mod.conf exists and has a usable `name`
-	// field. If mod.conf is missing, empty, or has no name, Name
-	// falls back to the folder name and ConfOK is false.
+	// ConfOK is true only if mod.conf/modpack.conf exists and has
+	// a usable `name` field.
+	// If it's missing, empty, or has no name, Name falls back to
+	// the folder name and ConfOK is false.
 	ConfOK bool
 }
 
 // ScanMods scans the immediate subdirectories of dir for mods.
-// Directories containing a modpack.conf are reported with
-// IsModpack set, but are not scanned for nested mods (not implemented yet).
+// Directories containing a modpack.conf are reported with IsModpack true
 func ScanMods(dir string) ([]Mod, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -49,12 +49,7 @@ func ScanMods(dir string) ([]Mod, error) {
 		modPath := filepath.Join(dir, modDir)
 
 		if util.FileExists(filepath.Join(modPath, "modpack.conf")) {
-			mods = append(mods, Mod{
-				Name:      modDir,
-				Dir:       modDir,
-				Path:      modPath,
-				IsModpack: true,
-			})
+			mods = append(mods, scanModpackDir(modDir, modPath))
 			continue
 		}
 
@@ -65,14 +60,25 @@ func ScanMods(dir string) ([]Mod, error) {
 }
 
 func scanModDir(dir, path string) Mod {
+	return scanConfDir(dir, path, "mod.conf")
+}
+
+func scanModpackDir(dir, path string) Mod {
+	m := scanConfDir(dir, path, "modpack.conf")
+	m.IsModpack = true
+
+	return m
+}
+
+// scanConfDir reads confFile (mod.conf or modpack.conf) out of path.
+func scanConfDir(dir, path, confFile string) Mod {
 	m := Mod{
-		Name: dir, // fallback, overwritten below if mod.conf has a name
+		Name: dir, // fallback, overwritten below if the conf file has a name
 		Dir:  dir,
 		Path: path,
 	}
 
-	confPath := filepath.Join(path, "mod.conf")
-	data, err := os.ReadFile(confPath)
+	data, err := os.ReadFile(filepath.Join(path, confFile))
 	if err != nil {
 		return m
 	}

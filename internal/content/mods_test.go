@@ -30,8 +30,9 @@ func TestScanMods(t *testing.T) {
 	// no mod.conf at all
 	writeFile(t, filepath.Join(dir, "bare_mod", "init.lua"), "-- nothing")
 
-	// modpack, should be flagged and not scanned further
-	writeFile(t, filepath.Join(dir, "somepack", "modpack.conf"), "name = somepack\n")
+	// modpack: its own metadata is parsed, but it's not scanned for nested mods
+	writeFile(t, filepath.Join(dir, "somepack", "modpack.conf"),
+		"name = somepack\ntitle = Some Pack\nauthor = someone\nrelease = 7\n")
 	writeFile(t, filepath.Join(dir, "somepack", "innermod", "mod.conf"), "name = innermod\n")
 
 	mods, err := ScanMods(dir)
@@ -67,7 +68,7 @@ func TestScanMods(t *testing.T) {
 	}
 
 	pack := byName["somepack"]
-	if !pack.IsModpack {
-		t.Errorf("somepack: expected IsModpack=true, got %+v", pack)
+	if !pack.IsModpack || !pack.ConfOK || pack.Title != "Some Pack" || pack.Author != "someone" || pack.Release != 7 {
+		t.Errorf("somepack: unexpected result %+v", pack)
 	}
 }
