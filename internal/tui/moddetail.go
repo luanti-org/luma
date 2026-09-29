@@ -95,6 +95,9 @@ func (m model) viewModDetail() string {
 			pad--
 		}
 
+		if pad < 0 {
+			pad = 0 // clamp pad to zero to prevent panic
+		}
 		s += strings.Repeat("\n", pad)
 		if end-start < len(m.modpackMods) {
 			s += fmt.Sprintf("(%d-%d of %d)", start+1, end, len(m.modpackMods))
