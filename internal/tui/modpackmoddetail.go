@@ -1,0 +1,49 @@
+package tui
+
+import (
+	"fmt"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func (m model) updateModpackModDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		return m, tea.Quit
+
+	case "esc", "backspace":
+		m.screen = screenModDetail
+	}
+
+	return m, nil
+}
+
+func (m model) viewModpackModDetail() string {
+	mod := m.selectedModpackMod
+
+	s := fmt.Sprintf("%s\n\n", mod.Name)
+
+	if mod.Title != "" {
+		s += fmt.Sprintf("title:       %s\n", mod.Title)
+	}
+	if mod.Author != "" {
+		s += fmt.Sprintf("author:      %s\n", mod.Author)
+	}
+	if mod.Description != "" {
+		s += fmt.Sprintf("description: %s\n", mod.Description)
+	}
+
+	s += fmt.Sprintf("folder:      %s\n", mod.Dir)
+	s += fmt.Sprintf("path:        %s\n", mod.Path)
+
+	if len(mod.Depends) > 0 {
+		s += wrapLabeled("depends:     ", mod.Depends, m.width)
+	}
+	if len(mod.OptionalDepends) > 0 {
+		s += wrapLabeled("optional:    ", mod.OptionalDepends, m.width)
+	}
+
+	s += "\n(esc/backspace to go back, q to quit)\n"
+
+	return s
+}

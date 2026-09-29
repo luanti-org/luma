@@ -30,10 +30,20 @@ func TestScanMods(t *testing.T) {
 	// no mod.conf at all
 	writeFile(t, filepath.Join(dir, "bare_mod", "init.lua"), "-- nothing")
 
-	// modpack: its own metadata is parsed, but it's not scanned for nested mods
+	// modpack: its own metadata is parsed, and its members are scanned
 	writeFile(t, filepath.Join(dir, "somepack", "modpack.conf"),
-		"name = somepack\ntitle = Some Pack\nauthor = someone\nrelease = 7\n")
+		"name = somepack\ntitle = Some Pack\ndescription = A test pack\nauthor = someone\nrelease = 7\n")
 	writeFile(t, filepath.Join(dir, "somepack", "innermod", "mod.conf"), "name = innermod\n")
+	writeFile(t, filepath.Join(dir, "somepack", "innermod", "init.lua"), "-- nothing")
+
+	// pack member with no mod.conf at all
+	writeFile(t, filepath.Join(dir, "somepack", "baremember", "init.lua"), "-- nothing")
+
+	// non-mod folder inside the pack: no init.lua, must be excluded
+	writeFile(t, filepath.Join(dir, "somepack", "doc", "readme.txt"), "not a mod")
+
+	// modpack.conf with no name field
+	writeFile(t, filepath.Join(dir, "nonamepack", "modpack.conf"), "title = No Name Pack\n")
 
 	mods, err := ScanMods(dir)
 	if err != nil {
@@ -45,8 +55,8 @@ func TestScanMods(t *testing.T) {
 		byName[m.Dir] = m
 	}
 
-	if len(mods) != 4 {
-		t.Fatalf("expected 4 entries, got %d: %+v", len(mods), mods)
+	if len(mods) != 5 {
+		t.Fatalf("expected 5 entries, got %d: %+v", len(mods), mods)
 	}
 
 	good := byName["goodmod"]
@@ -68,7 +78,47 @@ func TestScanMods(t *testing.T) {
 	}
 
 	pack := byName["somepack"]
-	if !pack.IsModpack || !pack.ConfOK || pack.Title != "Some Pack" || pack.Author != "someone" || pack.Release != 7 {
+	if !pack.IsModpack || !pack.ConfOK || pack.Name != "somepack" ||
+		pack.Title != "Some Pack" || pack.Description != "A test pack" ||
+		pack.Author != "someone" || pack.Release != 7 {
 		t.Errorf("somepack: unexpected result %+v", pack)
+	}
+	if pack.Path != filepath.Join(dir, "somepack") {
+		t.Errorf("somepack: unexpected path %q", pack.Path)
+	}
+
+	// members: only the pack's own mod subfolders (init.lua required), with absolute paths
+	if len(pack.ModpackMods) != 2 {
+		t.Fatalf("somepack: expected 2 members, got %d: %+v", len(pack.ModpackMods), pack.ModpackMods)
+	}
+	members := make(map[string]Mod)
+	for _, m := range pack.ModpackMods {
+		members[m.Dir] = m
+	}
+
+	if _, ok := members["doc"]; ok {
+		t.Errorf("somepack/doc: non-mod folder should be excluded, got %+v", members["doc"])
+	}
+
+	inner := members["innermod"]
+	if !inner.ConfOK || inner.Name != "innermod" {
+		t.Errorf("somepack/innermod: unexpected result %+v", inner)
+	}
+	if inner.Path != filepath.Join(dir, "somepack", "innermod") {
+		t.Errorf("somepack/innermod: unexpected path %q", inner.Path)
+	}
+
+	bareMember := members["baremember"]
+	if bareMember.ConfOK || bareMember.Name != "baremember" {
+		t.Errorf("somepack/baremember: expected fallback to folder name, got %+v", bareMember)
+	}
+	if bareMember.Path != filepath.Join(dir, "somepack", "baremember") {
+		t.Errorf("somepack/baremember: unexpected path %q", bareMember.Path)
+	}
+
+	nonamePack := byName["nonamepack"]
+	if !nonamePack.IsModpack || nonamePack.ConfOK || nonamePack.Name != "nonamepack" ||
+		nonamePack.Title != "No Name Pack" {
+		t.Errorf("nonamepack: expected fallback to folder name, got %+v", nonamePack)
 	}
 }

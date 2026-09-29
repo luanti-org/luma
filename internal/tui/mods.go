@@ -83,6 +83,8 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		if len(m.mods) > 0 {
 			m.selectedMod = m.mods[m.modsCursor-modsRowCount]
+			m.modpackModsCursor = 0
+			m.modpackMods = m.mods[m.modsCursor-modsRowCount].ModpackMods
 			m.screen = screenModDetail
 		}
 	}

@@ -15,23 +15,24 @@ type Mod struct {
 	Title           string
 	Description     string
 	Author          string
-	Release         int // from mod.conf's `release`; 0 if absent
+	Release         int // from *.conf's `release`; 0 if absent
 	Depends         []string
 	OptionalDepends []string
 
-	Dir       string // folder name, e.g. "everness"
-	Path      string // full path to the mod folder
-	IsModpack bool   // parsed from modpack.conf instead of mod.conf - nested mods not scanned yet
+	Dir         string // folder name, e.g. "everness"
+	Path        string // full path to the mod folder
+	IsModpack   bool   // has modpack.conf instead of mod.conf
+	ModpackMods []Mod  // Stores information about mods in a modpack
 
-	// ConfOK is true only if mod.conf/modpack.conf exists and has
-	// a usable `name` field.
-	// If it's missing, empty, or has no name, Name falls back to
-	// the folder name and ConfOK is false.
+	// ConfOK is true only if *.conf exists and has a usable `name`
+	// field. If *.conf is missing, empty, or has no name, Name
+	// falls back to the folder name and ConfOK is false.
 	ConfOK bool
 }
 
 // ScanMods scans the immediate subdirectories of dir for mods.
-// Directories containing a modpack.conf are reported with IsModpack true
+// Directories containing a modpack.conf are reported with
+// IsModpack set and scanned into ModpackMods.
 func ScanMods(dir string) ([]Mod, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -49,7 +50,53 @@ func ScanMods(dir string) ([]Mod, error) {
 		modPath := filepath.Join(dir, modDir)
 
 		if util.FileExists(filepath.Join(modPath, "modpack.conf")) {
-			mods = append(mods, scanModpackDir(modDir, modPath))
+			folders, err := os.ReadDir(modPath)
+			if err != nil {
+				return nil, err
+			}
+
+			var modpackMods []Mod
+			var mp = Mod{
+				Name:      modDir,
+				Dir:       modDir,
+				Path:      modPath,
+				IsModpack: true,
+			}
+
+			for _, folder := range folders {
+				if !folder.IsDir() {
+					continue
+				}
+				modpackModDir := folder.Name()
+				modpackModPath := filepath.Join(modPath, modpackModDir)
+				if !util.FileExists(filepath.Join(modpackModPath, "init.lua")) {
+					continue
+				}
+
+				modpackMods = append(modpackMods, scanModDir(modpackModDir, modpackModPath))
+			}
+
+			confPath := filepath.Join(modPath, "modpack.conf")
+			data, err := os.ReadFile(confPath)
+			if err != nil {
+				return nil, err
+			}
+
+			conf := util.ParseConfFile(data)
+
+			name, ok := conf["name"]
+			if ok && name != "" {
+				mp.Name = name
+				mp.ConfOK = true
+			}
+
+			mp.Title = conf["title"]
+			mp.Description = conf["description"]
+			mp.Author = conf["author"]
+			mp.Release = util.ParseIntField(conf, "release")
+			mp.ModpackMods = modpackMods
+
+			mods = append(mods, mp)
 			continue
 		}
 
@@ -60,25 +107,14 @@ func ScanMods(dir string) ([]Mod, error) {
 }
 
 func scanModDir(dir, path string) Mod {
-	return scanConfDir(dir, path, "mod.conf")
-}
-
-func scanModpackDir(dir, path string) Mod {
-	m := scanConfDir(dir, path, "modpack.conf")
-	m.IsModpack = true
-
-	return m
-}
-
-// scanConfDir reads confFile (mod.conf or modpack.conf) out of path.
-func scanConfDir(dir, path, confFile string) Mod {
 	m := Mod{
-		Name: dir, // fallback, overwritten below if the conf file has a name
+		Name: dir, // fallback, overwritten below if mod.conf has a name
 		Dir:  dir,
 		Path: path,
 	}
 
-	data, err := os.ReadFile(filepath.Join(path, confFile))
+	confPath := filepath.Join(path, "mod.conf")
+	data, err := os.ReadFile(confPath)
 	if err != nil {
 		return m
 	}

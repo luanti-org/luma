@@ -25,6 +25,7 @@ const (
 	screenMenu screen = iota
 	screenMods
 	screenModDetail
+	screenModpackModDetail
 	screenGames
 	screenGameDetail
 	screenTexturepacks
@@ -56,6 +57,11 @@ type model struct {
 	modUpdates      []update.ModUpdate
 
 	selectedMod content.Mod
+
+	modpackMods       []content.Mod
+	modpackModsCursor int
+
+	selectedModpackMod content.Mod
 
 	games       []content.Game
 	gamesErr    error
@@ -123,6 +129,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateMods(keyMsg)
 	case screenModDetail:
 		return m.updateModDetail(keyMsg)
+	case screenModpackModDetail:
+		return m.updateModpackModDetail(keyMsg)
 	case screenGames:
 		return m.updateGames(keyMsg)
 	case screenGameDetail:
@@ -142,6 +150,8 @@ func (m model) View() string {
 		return m.viewMods()
 	case screenModDetail:
 		return m.viewModDetail()
+	case screenModpackModDetail:
+		return m.viewModpackModDetail()
 	case screenGames:
 		return m.viewGames()
 	case screenGameDetail:
