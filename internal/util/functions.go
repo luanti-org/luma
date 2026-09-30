@@ -3,6 +3,7 @@ package util
 import (
 	"bufio"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -61,4 +62,52 @@ func SplitList(value string) []string {
 func FileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+// SetConfFields sets keys in the conf file at path, replacing existing lines
+// in place and appending missing ones. File is created if absent.
+func SetConfFields(path string, fields map[string]string) error {
+	data, err := os.ReadFile(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	remaining := make(map[string]string, len(fields))
+	for k, v := range fields {
+		remaining[k] = v
+	}
+
+	var lines []string
+	if len(data) > 0 {
+		lines = strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+	}
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		key, _, found := strings.Cut(trimmed, "=")
+		if !found {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		if value, ok := remaining[key]; ok {
+			lines[i] = key + " = " + value
+			delete(remaining, key)
+		}
+	}
+
+	keys := make([]string, 0, len(remaining))
+	for k := range remaining {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		lines = append(lines, k+" = "+remaining[k])
+	}
+
+	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }

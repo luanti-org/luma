@@ -4,11 +4,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
+	"github.com/luanti-org/luma/internal/util"
 )
 
 func newTestServer(t *testing.T, body string) *contentdb.Client {
@@ -157,6 +160,73 @@ func TestCheckAllModUpdatesUnknownInstalledReleaseCountsAsOutdated(t *testing.T)
 	}
 	if len(updates) != 1 || updates[0].LatestRelease != 42 {
 		t.Errorf("updates = %+v, want 1 entry at release 42", updates)
+	}
+}
+
+func TestUpdateModDownloadsAndInstallsLatestRelease(t *testing.T) {
+	zipData := buildZip(t, "jane-mymod-abc123", map[string]string{
+		"mod.conf": "name = mymod\ndepends = default\n",
+		"init.lua": "-- hi\n",
+	})
+
+	var requestedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		w.Write(zipData)
+	}))
+	t.Cleanup(srv.Close)
+	client := contentdb.New(srv.URL)
+
+	destDir := t.TempDir()
+	u := ModUpdate{
+		Mod:           content.Mod{Name: "mymod", Author: "jane", Path: destDir},
+		LatestRelease: 42,
+	}
+
+	if err := UpdateMod(client, u); err != nil {
+		t.Fatalf("UpdateMod: %v", err)
+	}
+
+	wantPath := "/packages/jane/mymod/releases/42/download/"
+	if requestedPath != wantPath {
+		t.Errorf("requested path = %q, want %q", requestedPath, wantPath)
+	}
+
+	data, err := os.ReadFile(filepath.Join(destDir, "mod.conf"))
+	if err != nil {
+		t.Fatalf("reading mod.conf: %v", err)
+	}
+	if want := "name = mymod\ndepends = default\nauthor = jane\nrelease = 42\n"; string(data) != want {
+		t.Errorf("mod.conf = %q, want %q", data, want)
+	}
+}
+
+func TestUpdateModWritesModpackConf(t *testing.T) {
+	zipData := buildZip(t, "john-pack-abc123", map[string]string{
+		"modpack.conf": "name = pack\n",
+		"sub/init.lua": "-- hi\n",
+	})
+	client, _ := newDownloadTestServer(t, zipData)
+
+	destDir := t.TempDir()
+	u := ModUpdate{
+		Mod:           content.Mod{Name: "pack", Author: "john", Path: destDir, IsModpack: true},
+		LatestRelease: 5,
+	}
+
+	if err := UpdateMod(client, u); err != nil {
+		t.Fatalf("UpdateMod: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(destDir, "modpack.conf"))
+	if err != nil {
+		t.Fatalf("reading modpack.conf: %v", err)
+	}
+	if want := "name = pack\nauthor = john\nrelease = 5\n"; string(data) != want {
+		t.Errorf("modpack.conf = %q, want %q", data, want)
+	}
+	if util.FileExists(filepath.Join(destDir, "mod.conf")) {
+		t.Error("mod.conf should not be created for a modpack")
 	}
 }
 

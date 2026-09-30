@@ -222,3 +222,41 @@ func TestFileExists(t *testing.T) {
 		})
 	}
 }
+
+func TestSetConfFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mod.conf")
+	orig := "# a comment\nname = mymod\nrelease = 1\ndepends = default\n"
+	if err := os.WriteFile(path, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := SetConfFields(path, map[string]string{"release": "42", "author": "jane"})
+	if err != nil {
+		t.Fatalf("SetConfFields: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# a comment\nname = mymod\nrelease = 42\ndepends = default\nauthor = jane\n"
+	if string(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestSetConfFieldsCreatesMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mod.conf")
+
+	if err := SetConfFields(path, map[string]string{"name": "mymod", "author": "jane"}); err != nil {
+		t.Fatalf("SetConfFields: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "author = jane\nname = mymod\n"; string(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

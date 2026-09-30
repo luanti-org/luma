@@ -3,9 +3,13 @@
 package update
 
 import (
+	"path/filepath"
+	"strconv"
+
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
+	"github.com/luanti-org/luma/internal/util"
 )
 
 // ModUpdate pairs a locally installed mod with the latest release CDB knows about for it.
@@ -40,6 +44,36 @@ func modUpdatesOptions(engineInfo engine.Info) contentdb.UpdatesOptions {
 		ProtocolVersion: engineInfo.Protocol,
 		EngineVersion:   engineInfo.Version,
 	}
+}
+
+// UpdateMod downloads and installs the latest release for u,
+// replacing the mod's - or modpack's existing directory in place.
+func UpdateMod(client *contentdb.Client, u ModUpdate) error {
+	return InstallMod(client, u.Mod.Author, u.Mod.Name, u.LatestRelease, u.Mod.Path)
+}
+
+// InstallMod downloads and installs a release of author/name into destDir,
+// replacing anything already there.
+func InstallMod(client *contentdb.Client, author, name string, release int, destDir string) error {
+	url := client.ReleaseDownloadURL(author, name, release)
+	if err := DownloadPackage(client, url, destDir); err != nil {
+		return err
+	}
+
+	// CDB zips lack these; the Luanti client writes them after install too
+	return util.SetConfFields(modConfPath(destDir), map[string]string{
+		"name":    name,
+		"author":  author,
+		"release": strconv.Itoa(release),
+	})
+}
+
+// modConfPath returns modpack.conf for an installed modpack, else mod.conf.
+func modConfPath(dir string) string {
+	if util.FileExists(filepath.Join(dir, "modpack.conf")) || util.FileExists(filepath.Join(dir, "modpack.txt")) {
+		return filepath.Join(dir, "modpack.conf")
+	}
+	return filepath.Join(dir, "mod.conf")
 }
 
 // matchModUpdate reports whether mod has a newer release in latest

@@ -47,6 +47,10 @@ type model struct {
 	width   int
 	height  int
 
+	// inputBlocked is a counter, not a bool, so overlapping async ops
+	// don't stomp each other's blocked/unblocked state
+	inputBlocked int
+
 	mods       []content.Mod
 	modsErr    error
 	modsCursor int
@@ -55,6 +59,10 @@ type model struct {
 	modsLastChecked time.Time
 	modsUpdateErr   error
 	modUpdates      []update.ModUpdate
+
+	modsUpdatingAll     bool
+	modUpdateAllIdx     int // count of update attempts completed so far, into modUpdates
+	modUpdateAllResults []modUpdateResult
 
 	selectedMod content.Mod
 
@@ -104,6 +112,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if checkedMsg, ok := msg.(modUpdatesCheckedMsg); ok {
+		m.inputBlocked--
 		m.modsChecking = false
 		m.modsUpdateErr = checkedMsg.err
 		if checkedMsg.err == nil {
@@ -113,6 +122,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if stepMsg, ok := msg.(modUpdateStepMsg); ok {
+		return m.handleModUpdateStep(stepMsg)
+	}
+
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -120,6 +133,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if keyMsg.String() == "ctrl+c" {
 		return m, tea.Quit
+	}
+
+	if m.inputBlocked > 0 { // something blocking input, so don't handle keys
+		return m, nil
 	}
 
 	switch m.screen {
