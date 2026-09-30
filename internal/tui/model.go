@@ -47,22 +47,22 @@ type model struct {
 	width   int
 	height  int
 
-	// inputBlocked is a counter, not a bool, so overlapping async ops
-	// don't stomp each other's blocked/unblocked state
-	inputBlocked int
-
 	mods       []content.Mod
 	modsErr    error
 	modsCursor int
+
+	// modActionInProgress allows only one check/update at a time; navigation stays free
+	modActionInProgress bool
 
 	modsChecking    bool
 	modsLastChecked time.Time
 	modsUpdateErr   error
 	modUpdates      []update.ModUpdate
 
-	modsUpdatingAll     bool
-	modUpdateAllIdx     int // count of update attempts completed so far, into modUpdates
-	modUpdateAllResults []modUpdateResult
+	modsUpdating     bool
+	modUpdateQueue   []update.ModUpdate // what the current/last run updates, one or all
+	modUpdateIdx     int                // count of update attempts completed so far, into modUpdateQueue
+	modUpdateResults []modUpdateResult
 
 	selectedMod content.Mod
 
@@ -112,7 +112,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if checkedMsg, ok := msg.(modUpdatesCheckedMsg); ok {
-		m.inputBlocked--
+		m.modActionInProgress = false
 		m.modsChecking = false
 		m.modsUpdateErr = checkedMsg.err
 		if checkedMsg.err == nil {
@@ -135,8 +135,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	if m.inputBlocked > 0 { // something blocking input, so don't handle keys
-		return m, nil
+	if keyMsg.String() == "q" && m.modActionInProgress {
+		return m, nil // quitting mid-download could leave a mod folder half-replaced
 	}
 
 	switch m.screen {

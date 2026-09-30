@@ -37,7 +37,7 @@ func (m model) checkModUpdatesCmd() tea.Cmd {
 	}
 }
 
-// modUpdateResult is one entry's outcome from an update-all run.
+// modUpdateResult is one entry's outcome from an update run.
 type modUpdateResult struct {
 	mod update.ModUpdate
 	err error
@@ -45,7 +45,7 @@ type modUpdateResult struct {
 
 // modUpdateStepMsg is delivered when one mod's download+install finishes.
 type modUpdateStepMsg struct {
-	index int // position in m.modUpdates that was just attempted
+	index int // position in m.modUpdateQueue that was just attempted
 	err   error
 }
 
@@ -54,7 +54,7 @@ type modUpdateStepMsg struct {
 // Chaining these is what lets the UI show per-mod progress as each step completes
 func (m model) updateModStepCmd(index int) tea.Cmd {
 	client := m.cdb
-	u := m.modUpdates[index]
+	u := m.modUpdateQueue[index]
 
 	return func() tea.Msg {
 		err := update.UpdateMod(client, u)
@@ -63,32 +63,64 @@ func (m model) updateModStepCmd(index int) tea.Cmd {
 }
 
 // handleModUpdateStep records one step's result and either
-// kicks off the next one or, once done, unblocks input.
+// kicks off the next one or, once done, ends the mod action.
 func (m model) handleModUpdateStep(msg modUpdateStepMsg) (tea.Model, tea.Cmd) {
-	m.modUpdateAllResults = append(m.modUpdateAllResults, modUpdateResult{
-		mod: m.modUpdates[msg.index],
+	m.modUpdateResults = append(m.modUpdateResults, modUpdateResult{
+		mod: m.modUpdateQueue[msg.index],
 		err: msg.err,
 	})
-	m.modUpdateAllIdx = msg.index + 1
+	m.modUpdateIdx = msg.index + 1
 
-	if m.modUpdateAllIdx < len(m.modUpdates) {
-		return m, m.updateModStepCmd(m.modUpdateAllIdx)
+	if m.modUpdateIdx < len(m.modUpdateQueue) {
+		return m, m.updateModStepCmd(m.modUpdateIdx)
 	}
 
-	m.modsUpdatingAll = false
-	m.inputBlocked--
+	m.modsUpdating = false
+	m.modActionInProgress = false
 
-	// pruned only now, since the step chain indexes into modUpdates
-	var failed []update.ModUpdate
-	for _, r := range m.modUpdateAllResults {
-		if r.err != nil {
-			failed = append(failed, r.mod)
+	var remaining []update.ModUpdate
+	for _, u := range m.modUpdates {
+		if !m.modUpdateSucceeded(u.Mod.Path) {
+			remaining = append(remaining, u)
 		}
 	}
-	m.modUpdates = failed
+	m.modUpdates = remaining
+
 	m.mods, m.modsErr = content.ScanMods(m.engInfo.ModsDir)
+	m.modsCursor = min(m.modsCursor, max(modsRowCount+len(m.mods)-1, 0))
+	for _, mod := range m.mods {
+		if mod.Path == m.selectedMod.Path {
+			m.selectedMod = mod // the detail screen may be open on it
+		}
+	}
 
 	return m, nil
+}
+
+// modUpdateSucceeded reports whether the last run updated the mod at path.
+func (m model) modUpdateSucceeded(path string) bool {
+	for _, r := range m.modUpdateResults {
+		if r.mod.Mod.Path == path && r.err == nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+// startModUpdates kicks off a run over queue, unless a mod action is already running.
+func (m model) startModUpdates(queue []update.ModUpdate) (tea.Model, tea.Cmd) {
+	if m.modActionInProgress || len(queue) == 0 {
+		return m, nil
+	}
+
+	m.modActionInProgress = true
+	m.modsUpdating = true
+	m.modUpdateQueue = queue
+	m.modUpdateIdx = 0
+	m.modUpdateResults = nil
+
+	return m, m.updateModStepCmd(0)
 }
 
 func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -103,6 +135,17 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "esc", "backspace":
 		m.screen = screenMenu
+
+	case "u":
+		if m.modsCursor < modsRowCount || len(m.mods) == 0 {
+			break
+		}
+		mod := m.mods[m.modsCursor-modsRowCount]
+		for _, u := range m.modUpdates {
+			if u.Mod.Path == mod.Path {
+				return m.startModUpdates([]update.ModUpdate{u})
+			}
+		}
 
 	case "up", "k":
 		if m.modsCursor > 0 {
@@ -122,20 +165,17 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.modsCursor < modsRowCount {
 			switch m.modsCursor {
 			case modsCmdCheckUpdates:
+				if m.modActionInProgress {
+					break
+				}
+				m.modActionInProgress = true
 				m.modsChecking = true
 				m.modsUpdateErr = nil
-				m.inputBlocked++
 				return m, m.checkModUpdatesCmd()
 
 			case modsCmdUpdateAll:
-				if len(m.modUpdates) == 0 {
-					break
-				}
-				m.modsUpdatingAll = true
-				m.modUpdateAllIdx = 0
-				m.modUpdateAllResults = nil
-				m.inputBlocked++
-				return m, m.updateModStepCmd(0)
+				queue := append([]update.ModUpdate(nil), m.modUpdates...)
+				return m.startModUpdates(queue)
 			}
 			break
 		}
@@ -175,17 +215,20 @@ func (m model) modsCommandLabel(row int) string {
 }
 
 func (m model) updateAllLabel() string {
-	switch {
-	case m.modsUpdatingAll:
-		return fmt.Sprintf("Updating mods... (%d/%d)", m.modUpdateAllIdx, len(m.modUpdates))
-	case len(m.modUpdateAllResults) > 0:
-		return fmt.Sprintf("Update all (last run: %d/%d succeeded)",
-			len(m.modUpdateAllResults)-countModUpdateErrs(m.modUpdateAllResults), len(m.modUpdateAllResults))
-	case len(m.modUpdates) == 0:
-		return "Update all (no updates available)"
-	default:
-		return fmt.Sprintf("Update all (%d available)", len(m.modUpdates))
+	if m.modsUpdating {
+		return fmt.Sprintf("Updating mods... (%d/%d)", m.modUpdateIdx, len(m.modUpdateQueue))
 	}
+
+	label := "Update all (no updates available)"
+	if len(m.modUpdates) > 0 {
+		label = fmt.Sprintf("Update all (%d available)", len(m.modUpdates))
+	}
+	if len(m.modUpdateResults) > 0 {
+		label += fmt.Sprintf(" [last run: %d/%d succeeded]",
+			len(m.modUpdateResults)-countModUpdateErrs(m.modUpdateResults), len(m.modUpdateResults))
+	}
+
+	return label
 }
 
 func countModUpdateErrs(results []modUpdateResult) int {
@@ -276,7 +319,7 @@ func (m model) viewMods() string {
 	}
 
 	s += "\n\n(P = modpack, U = update available)\n"
-	s += "(up/down to move, enter to select, esc/backspace to go back, q to quit)"
+	s += "(up/down to move, enter to select, u to update mod, esc/backspace to go back, q to quit)"
 
 	return s
 }

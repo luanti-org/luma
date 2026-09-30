@@ -27,7 +27,9 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		switch m.cursor {
 		case 0:
-			m.mods, m.modsErr = content.ScanMods(m.engInfo.ModsDir)
+			if !m.modActionInProgress { // a folder may be mid-replace; the run rescans when done
+				m.mods, m.modsErr = content.ScanMods(m.engInfo.ModsDir)
+			}
 			m.screen = screenMods
 		case 1:
 			m.games, m.gamesErr = content.ScanGames(m.engInfo.GamesDir)

@@ -17,9 +17,6 @@ func (m model) updateModDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "backspace":
 		m.screen = screenMods
 
-	case "u":
-		// TODO: hook up to an actual download + install api
-
 	case "up", "k":
 		if m.modpackModsCursor > 0 {
 			m.modpackModsCursor--
@@ -105,7 +102,7 @@ func (m model) viewModDetail() string {
 	}
 
 	if m.modHasUpdate(mod) {
-		s += "\n" + util.UpdateTagStyle.Render("Update available, press u to update") + "\n"
+		s += "\n" + util.UpdateTagStyle.Render("Update available") + "\n"
 	}
 
 	s += "\n(esc/backspace to go back, q to quit)"
