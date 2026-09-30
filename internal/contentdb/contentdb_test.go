@@ -52,7 +52,7 @@ func TestDownloadRelease(t *testing.T) {
 	c := newTestServer(t)
 
 	var buf bytes.Buffer
-	if err := c.Download(c.ReleaseDownloadURL("alice", "mymod", 42), &buf); err != nil {
+	if err := c.Download(c.ReleaseDownloadURL("alice", "mymod", 42, ""), &buf); err != nil {
 		t.Fatalf("Download: %v", err)
 	}
 	if got := buf.String(); got != "release-42" {
@@ -100,6 +100,47 @@ func TestDownloadStalled(t *testing.T) {
 	err := c.Download(c.BaseURL+"/", &buf)
 	if err == nil || !strings.Contains(err.Error(), "download stalled") {
 		t.Fatalf("err = %v, want a stall error", err)
+	}
+}
+
+func TestReleaseDownloadURLReason(t *testing.T) {
+	c := New("https://example.com")
+
+	got := c.ReleaseDownloadURL("alice", "mymod", 42, ReasonUpdate)
+	if want := "https://example.com/packages/alice/mymod/releases/42/download/?reason=update"; got != want {
+		t.Errorf("url = %q, want %q", got, want)
+	}
+}
+
+func TestRequestsSendUserAgent(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Header.Get("User-Agent"))
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "/file", http.StatusFound)
+			return
+		}
+		w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+	c.UserAgent = "Luma/1.2.3 (Test/1 x)"
+
+	var buf bytes.Buffer
+	if err := c.Download(srv.URL+"/redirect", &buf); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if _, err := c.PackageDetails("alice", "mymod"); err != nil {
+		t.Fatalf("PackageDetails: %v", err)
+	}
+
+	if len(got) != 3 {
+		t.Fatalf("got %d requests, want 3", len(got))
+	}
+	for i, ua := range got {
+		if ua != c.UserAgent {
+			t.Errorf("request %d User-Agent = %q, want %q", i, ua, c.UserAgent)
+		}
 	}
 }
 
