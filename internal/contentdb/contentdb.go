@@ -12,15 +12,25 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/luanti-org/luma/internal/version"
 )
 
 // DefaultBaseURL is the official ContentDB instance
 const DefaultBaseURL = "https://content.luanti.org"
 
+// Download reasons, sent as ?reason= so ContentDB can rank packages like the Luanti client does.
+const (
+	ReasonNew        = "new"
+	ReasonUpdate     = "update"
+	ReasonDependency = "dependency"
+)
+
 // Client talks to a ContentDB-compatible API.
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
+	UserAgent  string
 }
 
 // New returns a Client for baseURL. An empty baseURL uses DefaultBaseURL.
@@ -32,6 +42,7 @@ func New(baseURL string) *Client {
 	return &Client{
 		BaseURL:    strings.TrimRight(baseURL, "/"),
 		HTTPClient: http.DefaultClient,
+		UserAgent:  version.UserAgent(""),
 	}
 }
 
@@ -260,16 +271,20 @@ func (c *Client) DownloadURL(author, name string) string {
 	return fmt.Sprintf("%s/packages/%s/%s/download/", c.BaseURL, author, name)
 }
 
-// ReleaseDownloadURL returns the URL for one specific release.
-func (c *Client) ReleaseDownloadURL(author, name string, releaseID int) string {
-	return fmt.Sprintf("%s/packages/%s/%s/releases/%s/download/",
+// ReleaseDownloadURL returns the URL for one specific release; reason may be empty.
+func (c *Client) ReleaseDownloadURL(author, name string, releaseID int, reason string) string {
+	u := fmt.Sprintf("%s/packages/%s/%s/releases/%s/download/",
 		c.BaseURL, author, name, strconv.Itoa(releaseID))
+	if reason != "" {
+		u += "?reason=" + url.QueryEscape(reason)
+	}
+	return u
 }
 
 // Download streams the file at downloadURL into dst, following redirects.
 // Use DownloadURL or ReleaseDownloadURL to build downloadURL.
 func (c *Client) Download(downloadURL string, dst io.Writer) error {
-	resp, err := c.HTTPClient.Get(downloadURL)
+	resp, err := c.doGet(downloadURL)
 	if err != nil {
 		return err
 	}
@@ -291,7 +306,7 @@ func (c *Client) get(path string, query url.Values, out interface{}) error {
 		full += "?" + query.Encode()
 	}
 
-	resp, err := c.HTTPClient.Get(full)
+	resp, err := c.doGet(full)
 	if err != nil {
 		return err
 	}
@@ -303,4 +318,15 @@ func (c *Client) get(path string, query url.Values, out interface{}) error {
 	}
 
 	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+func (c *Client) doGet(u string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	if c.UserAgent != "" {
+		req.Header.Set("User-Agent", c.UserAgent)
+	}
+	return c.HTTPClient.Do(req)
 }

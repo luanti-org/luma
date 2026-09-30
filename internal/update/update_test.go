@@ -169,9 +169,10 @@ func TestUpdateModDownloadsAndInstallsLatestRelease(t *testing.T) {
 		"init.lua": "-- hi\n",
 	})
 
-	var requestedPath string
+	var requestedPath, requestedReason string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestedPath = r.URL.Path
+		requestedReason = r.URL.Query().Get("reason")
 		w.Write(zipData)
 	}))
 	t.Cleanup(srv.Close)
@@ -190,6 +191,9 @@ func TestUpdateModDownloadsAndInstallsLatestRelease(t *testing.T) {
 	wantPath := "/packages/jane/mymod/releases/42/download/"
 	if requestedPath != wantPath {
 		t.Errorf("requested path = %q, want %q", requestedPath, wantPath)
+	}
+	if requestedReason != contentdb.ReasonUpdate {
+		t.Errorf("reason = %q, want %q", requestedReason, contentdb.ReasonUpdate)
 	}
 
 	data, err := os.ReadFile(filepath.Join(destDir, "mod.conf"))
