@@ -14,6 +14,7 @@ import (
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
 	"github.com/luanti-org/luma/internal/update"
+	"github.com/luanti-org/luma/internal/version"
 )
 
 // cdbRequestTimeout bounds how long a ContentDB request go before timing out
@@ -88,6 +89,7 @@ type model struct {
 func New(engInfo engine.Info) model {
 	cdb := contentdb.New("")
 	cdb.HTTPClient = &http.Client{Timeout: cdbRequestTimeout} // don't share/mutate http.DefaultClient
+	cdb.UserAgent = version.UserAgent(engInfo.Version)
 
 	return model{
 		screen:  screenMenu,

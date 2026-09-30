@@ -14,6 +14,7 @@ import (
 	"github.com/luanti-org/luma/internal/engine"
 	"github.com/luanti-org/luma/internal/help"
 	"github.com/luanti-org/luma/internal/tui"
+	"github.com/luanti-org/luma/internal/version"
 )
 
 // engineVersionsTimeout bounds the startup ContentDB lookup, so a stalled server can't hang detection
@@ -23,6 +24,7 @@ func main() {
 	root := pflag.StringP("dir", "d", "", "path to the Luanti install. Defaults to the current directory.")
 	flatpak := pflag.Bool("flatpak", false, "use the Luanti flatpak install ("+engine.DefaultFlatpakAppID+")")
 	engineVersion := pflag.StringP("engine-version", "e", "", "override the detected engine version, e.g. 5.17. Use only if detection fails or you know what you're doing")
+	showVersion := pflag.Bool("version", false, "print the luma version and exit")
 
 	pflag.Usage = func() { help.Print(pflag.CommandLine.Output(), pflag.CommandLine) }
 	pflag.CommandLine.SetInterspersed(false) // everything from the command on belongs to the cli
@@ -33,6 +35,11 @@ func main() {
 	}
 
 	pflag.Parse()
+
+	if *showVersion {
+		fmt.Println("luma", version.String())
+		return
+	}
 
 	if *flatpak && *root != "" {
 		fmt.Fprintln(os.Stderr, "luma: --dir and --flatpak can't be used together")

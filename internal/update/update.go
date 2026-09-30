@@ -49,13 +49,13 @@ func modUpdatesOptions(engineInfo engine.Info) contentdb.UpdatesOptions {
 // UpdateMod downloads and installs the latest release for u,
 // replacing the mod's - or modpack's existing directory in place.
 func UpdateMod(client *contentdb.Client, u ModUpdate) error {
-	return InstallMod(client, u.Mod.Author, u.Mod.Name, u.LatestRelease, u.Mod.Path)
+	return InstallMod(client, u.Mod.Author, u.Mod.Name, u.LatestRelease, u.Mod.Path, contentdb.ReasonUpdate)
 }
 
 // InstallMod downloads and installs a release of author/name into destDir,
 // replacing anything already there.
-func InstallMod(client *contentdb.Client, author, name string, release int, destDir string) error {
-	url := client.ReleaseDownloadURL(author, name, release)
+func InstallMod(client *contentdb.Client, author, name string, release int, destDir, reason string) error {
+	url := client.ReleaseDownloadURL(author, name, release, reason)
 	if err := DownloadPackage(client, url, destDir); err != nil {
 		return err
 	}
