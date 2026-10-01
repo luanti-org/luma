@@ -194,6 +194,39 @@ func TestUpdates(t *testing.T) {
 	}
 }
 
+func TestEngineVersions(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/minetest_versions/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(`[
+			{"is_dev": false, "name": "5.17", "protocol_version": 53},
+			{"is_dev": true, "name": "5.18-dev", "protocol_version": 54}
+		]`))
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL)
+
+	versions, err := c.EngineVersions()
+	if err != nil {
+		t.Fatalf("EngineVersions: %v", err)
+	}
+
+	want := []EngineVersion{
+		{Name: "5.17", ProtocolVersion: 53},
+		{Name: "5.18-dev", ProtocolVersion: 54, IsDev: true},
+	}
+	if len(versions) != len(want) {
+		t.Fatalf("got %d versions, want %d", len(versions), len(want))
+	}
+	for i := range want {
+		if versions[i] != want[i] {
+			t.Errorf("versions[%d] = %+v, want %+v", i, versions[i], want[i])
+		}
+	}
+}
+
 func TestPackageDetails(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/packages/alice/mymod/", func(w http.ResponseWriter, r *http.Request) {

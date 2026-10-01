@@ -123,13 +123,23 @@ func TestDetectDirNotRunInPlace(t *testing.T) {
 }
 
 func TestDetectDirNoBinary(t *testing.T) {
-	dir := newInstall(t, "")
+	dir := t.TempDir()
 	info, err := DetectDir(dir)
-	if !errors.Is(err, ErrNoBinary) {
-		t.Errorf("err = %v, want ErrNoBinary", err)
+	if !errors.Is(err, ErrNoBinary) || errors.Is(err, ErrVersionInferred) {
+		t.Errorf("err = %v, want ErrNoBinary only", err)
 	}
 	// content scanning shouldn't depend on the engine binary being found
 	if info.ModsDir != filepath.Join(dir, "mods") || info.GamesDir != filepath.Join(dir, "games") {
 		t.Errorf("info = %+v, want ModsDir/GamesDir still set under %s", info, dir)
+	}
+}
+
+func TestDetectDirNoBinaryInfersFromTable(t *testing.T) {
+	info, err := DetectDir(newInstall(t, ""))
+	if !errors.Is(err, ErrVersionInferred) || !errors.Is(err, ErrNoBinary) {
+		t.Errorf("err = %v, want ErrVersionInferred wrapping ErrNoBinary", err)
+	}
+	if info.Version != "5.17.0" || info.Protocol != 53 {
+		t.Errorf("info = %+v, want 5.17.0 / 53 from the newest table entry", info)
 	}
 }

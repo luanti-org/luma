@@ -255,6 +255,17 @@ func (c *Client) Updates(opts UpdatesOptions) (map[string]int, error) {
 	return updates, nil
 }
 
+// EngineVersions fetches GET /api/minetest_versions/
+// names are major.minor only - "5.17" or "5.18-dev"
+func (c *Client) EngineVersions() ([]EngineVersion, error) {
+	var versions []EngineVersion
+	if err := c.get("/api/minetest_versions/", nil, &versions); err != nil {
+		return nil, err
+	}
+
+	return versions, nil
+}
+
 // DownloadURL returns the URL for a package's latest release.
 func (c *Client) DownloadURL(author, name string) string {
 	return fmt.Sprintf("%s/packages/%s/%s/download/", c.BaseURL, author, name)

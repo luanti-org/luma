@@ -37,12 +37,12 @@ func DetectDir(dir string) (Info, error) {
 
 	out, err := readVersionOutput(dir)
 	if err != nil {
-		return info, err
+		return inferFromTable(dir, info, err)
 	}
 
 	version, err := parseVersionOutput(out)
 	if err != nil {
-		return info, err
+		return inferFromTable(dir, info, err)
 	}
 	info.Version = version
 
@@ -68,6 +68,22 @@ func DetectDir(dir string) (Info, error) {
 	info.Protocol = proto
 
 	return info, nil
+}
+
+// takes version and protocol from misc_s.lua's newest entry when the binary can't be read.
+// binErr is returned as-is if the table can't be read either.
+func inferFromTable(dir string, info Info, binErr error) (Info, error) {
+	table, err := ReadProtocolTable(dir)
+	if err != nil {
+		return info, binErr
+	}
+	version, proto, ok := newestEntry(table)
+	if !ok {
+		return info, binErr
+	}
+	info.Version, info.Protocol = version, proto
+
+	return info, fmt.Errorf("%w: %w", ErrVersionInferred, binErr)
 }
 
 // ReadVersion runs the install's binary with --version and parses the result.
