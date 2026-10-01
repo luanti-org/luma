@@ -1,6 +1,13 @@
 package engine
 
-import "testing"
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
 
 func TestParseVersionOutput(t *testing.T) {
 	tests := []struct {
@@ -110,5 +117,64 @@ func TestLookupProtocol(t *testing.T) {
 		if got != tt.want || ok != tt.ok {
 			t.Errorf("lookupProtocol(%q) = %d, %v; want %d, %v", tt.version, got, ok, tt.want, tt.ok)
 		}
+	}
+}
+
+func TestDetectMissingDir(t *testing.T) {
+	_, warn, fatal := Detect(filepath.Join(t.TempDir(), "nope"), false)
+	if fatal == nil || !strings.Contains(fatal.Error(), "is not a directory") {
+		t.Errorf("fatal = %v, want a not-a-directory error", fatal)
+	}
+	if warn != nil {
+		t.Errorf("warn = %v, want nil", warn)
+	}
+}
+
+func TestDetectEmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	_, _, fatal := Detect(dir, false)
+	if fatal == nil || !strings.Contains(fatal.Error(), "no Luanti install in "+dir) {
+		t.Errorf("fatal = %v, want a no-install error naming %s", fatal, dir)
+	}
+}
+
+func TestDetectEmptyCurrentDir(t *testing.T) {
+	t.Chdir(t.TempDir())
+	_, _, fatal := Detect("", false)
+	if fatal == nil || !strings.Contains(fatal.Error(), "the current directory") {
+		t.Errorf("fatal = %v, want it to name the current directory", fatal)
+	}
+}
+
+func TestDetectDataOnlyDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "mods"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	info, warn, fatal := Detect(dir, false)
+	if fatal != nil {
+		t.Fatalf("fatal = %v, want nil", fatal)
+	}
+	if !errors.Is(warn, ErrNoBinary) {
+		t.Errorf("warn = %v, want ErrNoBinary", warn)
+	}
+	if info.ModsDir == "" {
+		t.Error("ModsDir is empty")
+	}
+}
+
+func TestDetectFullInstall(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a stand-in binary")
+	}
+
+	dir := newInstall(t, "Luanti 5.17.0 (Linux)\nUsing LuaJIT 2.1")
+	info, warn, fatal := Detect(dir, false)
+	if fatal != nil || warn != nil {
+		t.Fatalf("warn = %v, fatal = %v, want both nil", warn, fatal)
+	}
+	if info.Version != "5.17.0" || info.Protocol != 53 {
+		t.Errorf("info = %+v, want 5.17.0 / 53", info)
 	}
 }

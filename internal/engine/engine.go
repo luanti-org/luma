@@ -6,6 +6,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -30,27 +31,38 @@ var (
 	protocolEntry  = regexp.MustCompile(`\["(\d+\.\d+\.\d+)"\]\s*=\s*(\d+)`)
 )
 
-// Detect tries DetectDir(dir) first, falling back to DetectFlatpak(DefaultFlatpakAppID) if dir has no binary.
-// Call DetectDir directly when dir was explicitly given,
-// so a bad dir doesn't silently get assumed by a flatpak install
-func Detect(dir string) (Info, error) {
-	info, err := DetectDir(dir)
-	if !errors.Is(err, ErrNoBinary) {
-		return info, err
+// Detect finds the install chosen by --dir/--flatpak, defaulting to the current directory.
+// fatal means there is nothing usable, warn means content dirs are valid but engine details are incomplete.
+func Detect(dir string, flatpak bool) (info Info, warn, fatal error) {
+	if flatpak {
+		info, err := DetectFlatpak(DefaultFlatpakAppID)
+		if errors.Is(err, ErrFlatpakUnavailable) || errors.Is(err, ErrFlatpakAppNotFound) {
+			return info, nil, err
+		}
+		return info, err, nil
 	}
 
-	return DetectFlatpak(DefaultFlatpakAppID)
+	where := dir
+	if dir == "" {
+		dir, where = ".", "the current directory"
+	}
+
+	if !dirExists(dir) {
+		return Info{}, nil, fmt.Errorf("%s is not a directory", dir)
+	}
+
+	info, err := DetectDir(dir)
+	// no binary is fine for a data-only folder, but it must at least hold content
+	if errors.Is(err, ErrNoBinary) && !dirExists(info.ModsDir) && !dirExists(info.GamesDir) && !dirExists(info.TexturesDir) {
+		return info, nil, fmt.Errorf("no Luanti install in %s, use --dir or --flatpak", where)
+	}
+
+	return info, err, nil
 }
 
-// DetectAuto is Detect, except the flatpak fallback is skipped when
-// dirExplicit is true (the caller was actually given a dir, rather than
-// using some placeholder/default).
-func DetectAuto(dir string, dirExplicit bool) (Info, error) {
-	if dirExplicit {
-		return DetectDir(dir)
-	}
-
-	return Detect(dir)
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
 }
 
 const protocolTableStart = "core.protocol_versions = {"

@@ -74,16 +74,3 @@ func TestDetectFlatpakUnknownApp(t *testing.T) {
 		t.Errorf("ModsDir = %q, want it to still be set for the given app ID", info.ModsDir)
 	}
 }
-
-func TestDetectFallsBackToFlatpak(t *testing.T) {
-	requireFlatpakApp(t)
-
-	// an empty dir has no bin/, so Detect should fall back to flatpak
-	info, err := Detect(t.TempDir())
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if info.Version == "" {
-		t.Error("info.Version is empty")
-	}
-}

@@ -133,18 +133,3 @@ func TestDetectDirNoBinary(t *testing.T) {
 		t.Errorf("info = %+v, want ModsDir/GamesDir still set under %s", info, dir)
 	}
 }
-
-func TestDetectPrefersDir(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("uses a shell script as a stand-in binary")
-	}
-
-	dir := newInstall(t, "Luanti 5.17.0 (Linux)\nUsing LuaJIT 2.1")
-	info, err := Detect(dir)
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if info.Version != "5.17.0" || info.Protocol != 53 {
-		t.Errorf("info = %+v, want 5.17.0 / 53 (from dir, not flatpak)", info)
-	}
-}
