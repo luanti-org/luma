@@ -51,7 +51,16 @@ type noun struct {
 
 // commands is the registry of every noun and its verbs. Add new commands here and help picks them up.
 // Each verb's handler parses its own flags from args, so nothing else in this file needs to change.
-var commands = map[string]noun{}
+var commands = map[string]noun{
+	"mods": {
+		summary: "manage installed mods",
+		verbs: map[string]verb{
+			"list":     {"[--names]", "list installed mods", modsList},
+			"outdated": {"[--names]", "list mods with a newer release on ContentDB", modsOutdated},
+			"update":   {"[-n] [-x a,b] [name...]", "update the named mods, or all outdated mods if none are named", modsUpdate},
+		},
+	},
+}
 
 // Noun is a top-level command group, as listed in help
 type Noun struct {

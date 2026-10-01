@@ -1,5 +1,5 @@
 // Package update provides composite operations that combine locally scanned content info with the ContentDB client,
-// so both the interactive TUI and a future non-interactive CLI can reuse the same logic
+// so both the interactive TUI and the non-interactive CLI can reuse the same logic
 package update
 
 import (
