@@ -11,11 +11,14 @@ import (
 	"time"
 )
 
-// ErrNoBinary means dir has no bin/luanti or bin/minetest to run.
-var ErrNoBinary = errors.New("engine: no luanti or minetest binary found in bin/")
+// ErrNoBinary means dir has no luanti/minetest client or server binary in bin/ to run
+var ErrNoBinary = errors.New("engine: no luanti or minetest binary (client or server) found in bin/")
 
-// Windows names are also tried
-var binaryNames = []string{"luanti", "luanti.exe", "minetest", "minetest.exe"}
+// Server-only builds only have luantiserver, and the deprecated minetest* aliases are tried last
+var binaryNames = []string{
+	"luanti", "luanti.exe", "luantiserver", "luantiserver.exe",
+	"minetest", "minetest.exe", "minetestserver", "minetestserver.exe",
+}
 
 // buildConfigs are CMake's default multi-config generator names.
 // A local build with one nests its binary under bin/<config>/ instead of bin/ directly.

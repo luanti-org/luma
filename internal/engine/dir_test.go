@@ -65,6 +65,23 @@ func TestDetectDir(t *testing.T) {
 	}
 }
 
+func TestDetectDirServerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as a stand-in binary")
+	}
+
+	dir := newInstall(t, "")
+	writeFile(t, filepath.Join(dir, "bin", "luantiserver"), "#!/bin/sh\necho 'Luanti 5.16.0 (Linux)'\n", 0o755)
+
+	info, err := DetectDir(dir)
+	if err != nil {
+		t.Fatalf("DetectDir: %v", err)
+	}
+	if info.Version != "5.16.0" || info.Protocol != 52 {
+		t.Errorf("info = %+v, want 5.16.0 / 52 from luantiserver", info)
+	}
+}
+
 func TestDetectDirDevBuild(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a shell script as a stand-in binary")
