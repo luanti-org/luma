@@ -40,7 +40,7 @@ var (
 type Options struct {
 	Dir           string // plain-directory install, "" means the current directory
 	Flatpak       bool
-	EngineVersion string // fallback when nothing local gives a version
+	EngineVersion string // overrides the detected version. Examples: "5.17" or "5.18-dev"
 	// Versions lists ContentDB's known engine versions, only called when needed
 	Versions func() ([]contentdb.EngineVersion, error)
 }
@@ -75,26 +75,28 @@ func Detect(opts Options) (info Info, warn, fatal error) {
 }
 
 // resolveVersion fills in whatever detection left unknown, detectErr being why it's unknown.
-// Order: binary --version, newest misc_s.lua entry, then the --engine-version fallback.
+// --engine-version wins if set, else binary --version, then the newest misc_s.lua entry.
 func resolveVersion(opts Options, info Info, detectErr error) (Info, error, error) {
-	if info.Version == "" {
-		if opts.EngineVersion == "" {
-			return info, nil, fmt.Errorf("can't detect the engine version, use --engine-version: %w", detectErr)
+	if opts.EngineVersion != "" {
+		var warn error
+		if info.Version != "" && majorMinor(info.Version) != majorMinor(opts.EngineVersion) {
+			warn = fmt.Errorf("using --engine-version %s instead of detected %s", opts.EngineVersion, info.Version)
 		}
 		proto, err := contentDBProtocol(opts, opts.EngineVersion)
 		if err != nil {
 			return info, nil, err
 		}
 		info.Version, info.Protocol = opts.EngineVersion, proto
-		return info, nil, nil
+		return info, warn, nil
+	}
+
+	if info.Version == "" {
+		return info, nil, fmt.Errorf("can't detect the engine version, use --engine-version: %w", detectErr)
 	}
 
 	var warn error
 	if errors.Is(detectErr, ErrVersionInferred) {
 		warn = detectErr
-	}
-	if opts.EngineVersion != "" {
-		warn = errors.Join(warn, fmt.Errorf("ignoring --engine-version %s, detected %s", opts.EngineVersion, info.Version))
 	}
 	if info.Protocol == 0 {
 		proto, err := contentDBProtocol(opts, info.Version)
@@ -122,12 +124,11 @@ func contentDBProtocol(opts Options, version string) (int, error) {
 // MatchVersion finds version's protocol in ContentDB's list,
 // which only names major.minor, e.g. "5.17.1" -> "5.17", "5.18.0-dev-abc" -> "5.18-dev"
 func MatchVersion(versions []contentdb.EngineVersion, version string) (int, error) {
-	base, suffix, _ := strings.Cut(version, "-")
-	parts := strings.Split(base, ".")
-	if len(parts) < 2 {
+	name := majorMinor(version)
+	if name == "" {
 		return 0, fmt.Errorf("engine version %q is not in major.minor form", version)
 	}
-	name := parts[0] + "." + parts[1]
+	_, suffix, _ := strings.Cut(version, "-")
 
 	candidates := []string{name}
 	if suffix != "" {
@@ -215,6 +216,17 @@ func lookupProtocol(table map[string]int, version string) (int, bool) {
 	p, ok := table[parts[0]+"."+parts[1]+".0"]
 
 	return p, ok
+}
+
+// majorMinor trims a version to what ContentDB compares, e.g. "5.18.0-dev-abc" -> "5.18", "" if malformed
+func majorMinor(version string) string {
+	base, _, _ := strings.Cut(version, "-")
+	parts := strings.Split(base, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+
+	return parts[0] + "." + parts[1]
 }
 
 // newestEntry returns the table's highest-protocol version, preferring the higher version on ties

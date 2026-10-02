@@ -207,7 +207,7 @@ func TestDetectEngineVersionOffline(t *testing.T) {
 	}
 }
 
-func TestDetectEngineVersionIgnoredWhenDetected(t *testing.T) {
+func TestDetectEngineVersionOverridesDetected(t *testing.T) {
 	dir := newInstall(t, "")
 	if err := os.Mkdir(filepath.Join(dir, "mods"), 0o755); err != nil {
 		t.Fatal(err)
@@ -217,11 +217,17 @@ func TestDetectEngineVersionIgnoredWhenDetected(t *testing.T) {
 	if fatal != nil {
 		t.Fatalf("fatal = %v, want nil", fatal)
 	}
-	if info.Version != "5.17.0" || info.Protocol != 53 {
-		t.Errorf("info = %+v, want the misc_s.lua 5.17.0 / 53, not the flag", info)
+	if info.Version != "5.16" || info.Protocol != 52 {
+		t.Errorf("info = %+v, want the flag's 5.16 / 52, not misc_s.lua's 5.17.0", info)
 	}
-	if warn == nil || !strings.Contains(warn.Error(), "ignoring --engine-version") {
-		t.Errorf("warn = %v, want it to mention the ignored flag", warn)
+	if warn == nil || !strings.Contains(warn.Error(), "instead of detected 5.17.0") {
+		t.Errorf("warn = %v, want it to name the overridden version", warn)
+	}
+
+	// same major.minor as detected is not worth a warning
+	_, warn, fatal = Detect(Options{Dir: dir, EngineVersion: "5.17", Versions: fakeVersions(nil)})
+	if fatal != nil || warn != nil {
+		t.Errorf("warn = %v, fatal = %v, want both nil", warn, fatal)
 	}
 }
 
