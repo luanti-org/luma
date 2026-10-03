@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestServer(t *testing.T) *Client {
@@ -56,6 +57,49 @@ func TestDownloadRelease(t *testing.T) {
 	}
 	if got := buf.String(); got != "release-42" {
 		t.Errorf("body = %q, want %q", got, "release-42")
+	}
+}
+
+// dripServer sends chunks of "x" with gap between them, then holds the connection open if hang is set
+func dripServer(t *testing.T, chunks int, gap time.Duration, hang bool) *Client {
+	t.Helper()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for i := 0; i < chunks; i++ {
+			w.Write([]byte("x"))
+			w.(http.Flusher).Flush()
+			time.Sleep(gap)
+		}
+		if hang {
+			<-r.Context().Done()
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	return New(srv.URL)
+}
+
+func TestDownloadOutlastsTimeout(t *testing.T) {
+	c := dripServer(t, 6, 50*time.Millisecond, false)
+	c.HTTPClient = &http.Client{Timeout: 200 * time.Millisecond}
+
+	var buf bytes.Buffer
+	if err := c.Download(c.BaseURL+"/", &buf); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if got := buf.String(); got != "xxxxxx" {
+		t.Errorf("body = %q, want %q", got, "xxxxxx")
+	}
+}
+
+func TestDownloadStalled(t *testing.T) {
+	c := dripServer(t, 1, 0, true)
+	c.HTTPClient = &http.Client{Timeout: 100 * time.Millisecond}
+
+	var buf bytes.Buffer
+	err := c.Download(c.BaseURL+"/", &buf)
+	if err == nil || !strings.Contains(err.Error(), "download stalled") {
+		t.Fatalf("err = %v, want a stall error", err)
 	}
 }
 
