@@ -5,6 +5,7 @@
 package contentdb
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // DefaultBaseURL is the official ContentDB instance
@@ -279,10 +281,32 @@ func (c *Client) ReleaseDownloadURL(author, name string, releaseID int) string {
 
 // Download streams the file at downloadURL into dst, following redirects.
 // Use DownloadURL or ReleaseDownloadURL to build downloadURL.
+// HTTPClient.Timeout bounds each stall here rather than the whole transfer, which may take longer.
 func (c *Client) Download(downloadURL string, dst io.Writer) error {
-	resp, err := c.HTTPClient.Get(downloadURL)
+	hc := *c.HTTPClient
+	stall := hc.Timeout
+	hc.Timeout = 0
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	body := &stallReader{}
+	if stall > 0 {
+		body.stall = stall
+		body.timer = time.AfterFunc(stall, func() {
+			cancel(fmt.Errorf("contentdb: %s: download stalled, no data for %s", downloadURL, stall))
+		})
+		defer body.timer.Stop()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return err
+	}
+
+	resp, err := hc.Do(req)
+	if err != nil {
+		return stalledOr(ctx, err)
 	}
 	defer resp.Body.Close()
 
@@ -290,7 +314,34 @@ func (c *Client) Download(downloadURL string, dst io.Writer) error {
 		return fmt.Errorf("contentdb: %s: unexpected status %d", downloadURL, resp.StatusCode)
 	}
 
-	_, err = io.Copy(dst, resp.Body)
+	body.r = resp.Body
+	if _, err := io.Copy(dst, body); err != nil {
+		return stalledOr(ctx, err)
+	}
+
+	return nil
+}
+
+// stallReader pushes its timer back whenever data arrives
+type stallReader struct {
+	r     io.Reader
+	timer *time.Timer
+	stall time.Duration
+}
+
+func (s *stallReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if n > 0 && s.timer != nil {
+		s.timer.Reset(s.stall)
+	}
+	return n, err
+}
+
+// stalledOr swaps the bare "context canceled" for the stall error when the timer fired
+func stalledOr(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
 	return err
 }
 
