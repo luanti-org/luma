@@ -42,8 +42,16 @@ func TestScanMods(t *testing.T) {
 	// non-mod folder inside the pack: no init.lua, must be excluded
 	writeFile(t, filepath.Join(dir, "somepack", "doc", "readme.txt"), "not a mod")
 
+	// nested modpack: its mods are flattened into the outer pack's members
+	writeFile(t, filepath.Join(dir, "somepack", "subpack", "modpack.conf"), "name = subpack\n")
+	writeFile(t, filepath.Join(dir, "somepack", "subpack", "deepmod", "init.lua"), "-- nothing")
+
 	// modpack.conf with no name field
 	writeFile(t, filepath.Join(dir, "nonamepack", "modpack.conf"), "title = No Name Pack\n")
+
+	// legacy modpack: only modpack.txt, no conf to read
+	writeFile(t, filepath.Join(dir, "txtpack", "modpack.txt"), "")
+	writeFile(t, filepath.Join(dir, "txtpack", "txtmember", "init.lua"), "-- nothing")
 
 	mods, err := ScanMods(dir)
 	if err != nil {
@@ -55,8 +63,8 @@ func TestScanMods(t *testing.T) {
 		byName[m.Dir] = m
 	}
 
-	if len(mods) != 5 {
-		t.Fatalf("expected 5 entries, got %d: %+v", len(mods), mods)
+	if len(mods) != 6 {
+		t.Fatalf("expected 6 entries, got %d: %+v", len(mods), mods)
 	}
 
 	good := byName["goodmod"]
@@ -76,6 +84,9 @@ func TestScanMods(t *testing.T) {
 	if bare.ConfOK || bare.Name != "bare_mod" {
 		t.Errorf("bare_mod: expected fallback to folder name, got %+v", bare)
 	}
+	if !bare.HasInit || good.HasInit {
+		t.Errorf("HasInit: expected bare_mod true and goodmod false, got %v and %v", bare.HasInit, good.HasInit)
+	}
 
 	pack := byName["somepack"]
 	if !pack.IsModpack || !pack.ConfOK || pack.Name != "somepack" ||
@@ -88,8 +99,8 @@ func TestScanMods(t *testing.T) {
 	}
 
 	// members: only the pack's own mod subfolders (init.lua required), with absolute paths
-	if len(pack.ModpackMods) != 2 {
-		t.Fatalf("somepack: expected 2 members, got %d: %+v", len(pack.ModpackMods), pack.ModpackMods)
+	if len(pack.ModpackMods) != 3 {
+		t.Fatalf("somepack: expected 3 members, got %d: %+v", len(pack.ModpackMods), pack.ModpackMods)
 	}
 	members := make(map[string]Mod)
 	for _, m := range pack.ModpackMods {
@@ -116,9 +127,60 @@ func TestScanMods(t *testing.T) {
 		t.Errorf("somepack/baremember: unexpected path %q", bareMember.Path)
 	}
 
+	if _, ok := members["subpack"]; ok {
+		t.Errorf("somepack/subpack: nested modpack should not be a member itself, got %+v", members["subpack"])
+	}
+
+	deep := members["deepmod"]
+	if deep.Name != "deepmod" || deep.Path != filepath.Join(dir, "somepack", "subpack", "deepmod") {
+		t.Errorf("somepack/subpack/deepmod: unexpected result %+v", deep)
+	}
+
+	txtPack := byName["txtpack"]
+	if !txtPack.IsModpack || txtPack.ConfOK || txtPack.Name != "txtpack" {
+		t.Errorf("txtpack: expected a modpack named after its folder, got %+v", txtPack)
+	}
+	if len(txtPack.ModpackMods) != 1 || txtPack.ModpackMods[0].Name != "txtmember" {
+		t.Errorf("txtpack: unexpected members %+v", txtPack.ModpackMods)
+	}
+
 	nonamePack := byName["nonamepack"]
 	if !nonamePack.IsModpack || nonamePack.ConfOK || nonamePack.Name != "nonamepack" ||
 		nonamePack.Title != "No Name Pack" {
 		t.Errorf("nonamepack: expected fallback to folder name, got %+v", nonamePack)
+	}
+}
+
+func TestProvidedModNames(t *testing.T) {
+	dir := t.TempDir()
+
+	writeFile(t, filepath.Join(dir, "plain", "init.lua"), "-- nothing")
+	writeFile(t, filepath.Join(dir, "renamed", "mod.conf"), "name = realname\n")
+	writeFile(t, filepath.Join(dir, "renamed", "init.lua"), "-- nothing")
+
+	// no init.lua: not loadable, must not count
+	writeFile(t, filepath.Join(dir, "stray", "readme.txt"), "not a mod")
+
+	// the pack's own name is not a mod name, only its members are
+	writeFile(t, filepath.Join(dir, "pack", "modpack.conf"), "name = pack\n")
+	writeFile(t, filepath.Join(dir, "pack", "member", "init.lua"), "-- nothing")
+	writeFile(t, filepath.Join(dir, "pack", "sub", "modpack.txt"), "")
+	writeFile(t, filepath.Join(dir, "pack", "sub", "deep", "init.lua"), "-- nothing")
+
+	mods, err := ScanMods(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := ProvidedModNames(mods)
+
+	want := []string{"plain", "realname", "member", "deep"}
+	if len(got) != len(want) {
+		t.Errorf("expected %d names, got %v", len(want), got)
+	}
+	for _, n := range want {
+		if !got[n] {
+			t.Errorf("expected %q in %v", n, got)
+		}
 	}
 }

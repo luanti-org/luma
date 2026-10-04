@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -83,7 +84,7 @@ func (m model) viewModDetail() string {
 				tag = "[!]" // missing/malformed mod.conf, name is a folder-name guess
 			}
 
-			s += truncate(fmt.Sprintf("%s %s %s", cursor, tag, mod.Name), m.width) + "\n"
+			s += truncate(fmt.Sprintf("%s %s %s%s", cursor, tag, mod.Name, subpackSuffix(m.selectedMod.Path, mod.Path)), m.width) + "\n"
 		}
 
 		pad := rows - (end - start)
@@ -108,4 +109,13 @@ func (m model) viewModDetail() string {
 	s += "\n(esc/backspace to go back, q to quit)"
 
 	return s
+}
+
+// subpackSuffix names the nested modpack a member at modPath sits in, empty if directly under packPath.
+func subpackSuffix(packPath, modPath string) string {
+	rel, err := filepath.Rel(packPath, filepath.Dir(modPath))
+	if err != nil || rel == "." {
+		return ""
+	}
+	return " (" + filepath.ToSlash(rel) + "/)"
 }
