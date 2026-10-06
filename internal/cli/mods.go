@@ -1,14 +1,21 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"maps"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/luanti-org/luma/internal/content"
+	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/update"
 )
 
@@ -76,7 +83,7 @@ func modsOutdated(c *ctx, args []string) int {
 		return exitOK
 	}
 
-	printUpdates(c, updates)
+	printUpdates(c.stdout, updates)
 
 	return exitOK
 }
@@ -85,6 +92,9 @@ func modsUpdate(c *ctx, args []string) int {
 	fs := c.newFlagSet()
 	dryRun := fs.BoolP("dry-run", "n", false, "show what would be updated without changing anything")
 	excludeList := fs.StringP("exclude", "x", "", "comma-separated mod names to skip")
+	yes := fs.BoolP("yes", "y", false, "install new dependencies without asking")
+	noDeps := fs.Bool("no-deps", false, "don't install new dependencies of the updated mods")
+	gameID := fs.String("game", "", "count this game's mods as installed when resolving dependencies")
 	if code, done := c.parseFlagsWithArgs(fs, args); done {
 		return code
 	}
@@ -102,15 +112,35 @@ func modsUpdate(c *ctx, args []string) int {
 	names := dedupe(fs.Args())
 	excluded := dedupe(splitList(*excludeList))
 
+	// an excluded name may be a new dependency rather than an installed mod
+	var depExcludes []string
+	for _, n := range excluded {
+		if _, ok := installed[n]; !ok {
+			depExcludes = append(depExcludes, n)
+		}
+	}
+
 	// checked before any network use so a typo fails fast and a mistyped --exclude can't update what it meant to skip
 	var unknown []string
-	for _, n := range append(append([]string{}, names...), excluded...) {
+	for _, n := range names {
 		if _, ok := installed[n]; !ok {
 			unknown = append(unknown, n)
 		}
 	}
+	if *noDeps {
+		unknown = append(unknown, depExcludes...)
+	}
 	if len(unknown) > 0 {
 		return c.err("not installed: %s", strings.Join(dedupe(unknown), ", "))
+	}
+
+	provided := content.ProvidedModNames(mods)
+	if *gameID != "" {
+		gameMods, ok := c.scanGameMods(*gameID)
+		if !ok {
+			return exitError
+		}
+		maps.Copy(provided, content.ProvidedModNames(gameMods))
 	}
 
 	updates, err := update.CheckAllModUpdates(mods, c.cdb, c.eng)
@@ -120,15 +150,63 @@ func modsUpdate(c *ctx, args []string) int {
 
 	plan := planUpdates(c, installed, updates, names, excluded)
 
+	var deps update.DepPlan
+	if !*noDeps && len(plan) > 0 {
+		deps, err = c.resolveDeps(plan, provided, excluded)
+		if err != nil {
+			return c.err("%v", err)
+		}
+	}
+
+	if unused := unusedExcludes(depExcludes, deps); len(unused) > 0 {
+		return c.err("not installed and not a new dependency: %s", strings.Join(unused, ", "))
+	}
+
 	if len(plan) == 0 {
 		fmt.Fprintln(c.stdout, "Nothing to update.")
 		return exitOK
 	}
 
+	for _, m := range deps.NotFound {
+		switch {
+		case !m.Excluded:
+			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s\n", m.Dep, m.RequiredBy)
+		case m.Package != "":
+			fmt.Fprintf(c.stderr, "luma: skipping excluded dependency %s (%s) for %s\n", m.Dep, m.Package, m.RequiredBy)
+		default:
+			fmt.Fprintf(c.stderr, "luma: skipping excluded dependency %s for %s\n", m.Dep, m.RequiredBy)
+		}
+	}
+
 	if *dryRun {
 		fmt.Fprintln(c.stdout, "Would update:")
-		printUpdates(c, plan)
+		printUpdates(c.stdout, plan)
+		if len(deps.Install) > 0 {
+			fmt.Fprintln(c.stdout, "\nWould install as dependencies:")
+			printDepInstalls(c.stdout, deps.Install)
+		}
 		return exitOK
+	}
+
+	if len(deps.Install) > 0 && !*yes {
+		if !c.interactive {
+			return c.err("new dependencies required (%s), rerun with -y or --no-deps", depNames(deps.Install))
+		}
+		if !c.confirmDeps(plan, deps.Install) {
+			return c.err("aborted, nothing was changed")
+		}
+	}
+
+	// dependencies go first, an updated mod missing one would not load
+	depsFailed := 0
+	for _, d := range deps.Install {
+		id := d.Package.Author + "/" + d.Package.Name
+		if err := c.installDep(d); err != nil {
+			depsFailed++
+			fmt.Fprintf(c.stderr, "luma: %s: install failed: %v\n", id, err)
+			continue
+		}
+		fmt.Fprintf(c.stdout, "%s: installed %d (dependency of %s)\n", id, d.Package.Release, d.RequiredBy)
 	}
 
 	failed := 0
@@ -141,11 +219,102 @@ func modsUpdate(c *ctx, args []string) int {
 		fmt.Fprintf(c.stdout, "%s: updated %s -> %d\n", u.Mod.Name, releaseStr(u.Mod.Release), u.LatestRelease)
 	}
 
+	if depsFailed > 0 {
+		c.err("%d of %d dependency installs failed", depsFailed, len(deps.Install))
+	}
 	if failed > 0 {
-		return c.err("%d of %d updates failed", failed, len(plan))
+		c.err("%d of %d updates failed", failed, len(plan))
+	}
+	if depsFailed > 0 || failed > 0 {
+		return exitError
 	}
 
 	return exitOK
+}
+
+// resolveDeps plans the new dependencies of the mods in plan.
+func (c *ctx) resolveDeps(plan []update.ModUpdate, provided map[string]bool, excluded []string) (update.DepPlan, error) {
+	index, err := update.FetchPackageIndex(c.cdb, c.eng)
+	if err != nil {
+		return update.DepPlan{}, fmt.Errorf("fetching package list: %w", err)
+	}
+
+	roots := make([]string, len(plan))
+	for i, u := range plan {
+		roots[i] = u.Mod.Author + "/" + u.Mod.Name
+	}
+
+	skip := make(map[string]bool, len(excluded))
+	for _, n := range excluded {
+		skip[n] = true
+	}
+
+	return update.ResolveDeps(c.cdb, roots, provided, index, skip)
+}
+
+// unusedExcludes returns the names in depExcludes that no dependency in deps was excluded by.
+func unusedExcludes(depExcludes []string, deps update.DepPlan) []string {
+	used := make(map[string]bool)
+	for _, m := range deps.NotFound {
+		if !m.Excluded {
+			continue
+		}
+		used[m.Dep] = true
+		if _, name, ok := strings.Cut(m.Package, "/"); ok {
+			used[name] = true
+		}
+	}
+
+	var unused []string
+	for _, n := range depExcludes {
+		if !used[n] {
+			unused = append(unused, n)
+		}
+	}
+	return unused
+}
+
+var packageNameRe = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+func (c *ctx) installDep(d update.DepInstall) error {
+	// the name comes from the network and becomes a folder name
+	if !packageNameRe.MatchString(d.Package.Name) {
+		return fmt.Errorf("invalid package name %q", d.Package.Name)
+	}
+
+	dest := filepath.Join(c.eng.ModsDir, d.Package.Name)
+
+	// InstallMod replaces its target, which here would be a folder luma didn't put there
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("folder %s already exists", dest)
+	}
+
+	return update.InstallMod(c.cdb, d.Package.Author, d.Package.Name, d.Package.Release, dest, contentdb.ReasonDependency)
+}
+
+// scanGameMods scans the mods of the installed game id, reporting any error itself. ok is false on failure.
+func (c *ctx) scanGameMods(id string) (mods []content.Mod, ok bool) {
+	games, err := content.ScanGames(c.eng.GamesDir)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		c.err("scanning games: %v", err)
+		return nil, false
+	}
+
+	for _, g := range games {
+		if g.ID != id {
+			continue
+		}
+
+		mods, err := content.ScanMods(filepath.Join(g.Path, "mods"))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			c.err("scanning mods of game %s: %v", id, err)
+			return nil, false
+		}
+		return mods, true
+	}
+
+	c.err("game not installed: %s", id)
+	return nil, false
 }
 
 // planUpdates picks which of updates to apply: those named (in order), or all when names is empty, minus excluded.
@@ -198,8 +367,41 @@ func noUpdateReason(m content.Mod) string {
 	return "can't check for updates, no author in " + conf
 }
 
-func printUpdates(c *ctx, updates []update.ModUpdate) {
-	tw := tabwriter.NewWriter(c.stdout, 0, 0, 2, ' ', 0)
+// confirmDeps shows the plan on stderr and asks whether to go ahead, defaulting to no.
+func (c *ctx) confirmDeps(plan []update.ModUpdate, installs []update.DepInstall) bool {
+	fmt.Fprintln(c.stderr, "Will update:")
+	printUpdates(c.stderr, plan)
+	fmt.Fprintln(c.stderr, "\nWill also install as dependencies:")
+	printDepInstalls(c.stderr, installs)
+	fmt.Fprint(c.stderr, "\nContinue? [y/N] ")
+
+	answer, _ := bufio.NewReader(c.stdin).ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	return answer == "y" || answer == "yes"
+}
+
+func depNames(installs []update.DepInstall) string {
+	names := make([]string, len(installs))
+	for i, d := range installs {
+		names[i] = d.Package.Author + "/" + d.Package.Name
+	}
+	return strings.Join(names, ", ")
+}
+
+func printDepInstalls(w io.Writer, installs []update.DepInstall) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "NAME\tRELEASE\tFOR\tNEEDED BY")
+
+	for _, d := range installs {
+		fmt.Fprintf(tw, "%s/%s\t%d\t%s\t%s\n", d.Package.Author, d.Package.Name, d.Package.Release, d.Dep, d.RequiredBy)
+	}
+
+	tw.Flush()
+}
+
+func printUpdates(w io.Writer, updates []update.ModUpdate) {
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tCURRENT\tLATEST")
 
 	for _, u := range updates {

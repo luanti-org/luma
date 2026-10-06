@@ -37,6 +37,8 @@ Mods in the list are tagged:
 
 Press `u` on a mod tagged `[U]` to update only that one. Updating replaces the mod's folder with the new release.
 
+Installing the dependencies that a new release adds is a work in progress in the terminal UI. For now, the [command line](../cli) `mods update` does it.
+
 Mods with no author in their `mod.conf` (or `modpack.conf`) can't be matched to a ContentDB package, so they are never available for update.
 
 ## Games and texture packs

@@ -16,14 +16,18 @@ import (
 	"github.com/luanti-org/luma/internal/engine"
 )
 
-// fakeCDB serves /api/updates/ and release zips, recording which mods were downloaded.
+// fakeCDB serves /api/updates/, the package list, dependencies and release zips,
+// recording which mods were downloaded.
 type fakeCDB struct {
-	updatesJSON string
-	updatesFail bool
-	failFor     map[string]bool
+	updatesJSON  string
+	updatesFail  bool
+	failFor      map[string]bool
+	packagesJSON string            // empty serves no packages
+	depsJSON     map[string]string // by "author/name", missing serves no dependencies
 
-	mu        sync.Mutex
-	downloads []string
+	mu           sync.Mutex
+	downloads    []string
+	listRequests int
 }
 
 func (f *fakeCDB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -36,8 +40,32 @@ func (f *fakeCDB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// /packages/<author>/<name>/releases/<id>/download/
+	if r.URL.Path == "/api/packages/" {
+		f.mu.Lock()
+		f.listRequests++
+		f.mu.Unlock()
+
+		if f.packagesJSON == "" {
+			w.Write([]byte("[]"))
+			return
+		}
+		w.Write([]byte(f.packagesJSON))
+		return
+	}
+
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+
+	// /api/packages/<author>/<name>/dependencies/
+	if len(parts) == 5 && parts[0] == "api" && parts[4] == "dependencies" {
+		if body, ok := f.depsJSON[parts[2]+"/"+parts[3]]; ok {
+			w.Write([]byte(body))
+			return
+		}
+		w.Write([]byte("{}"))
+		return
+	}
+
+	// /packages/<author>/<name>/releases/<id>/download/
 	if len(parts) != 6 || parts[0] != "packages" {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -326,6 +354,7 @@ func TestModsUpdateUnknownNames(t *testing.T) {
 	}{
 		{"positional", []string{"alpha", "nope"}},
 		{"exclude", []string{"--exclude", "alpha,nope"}},
+		{"exclude without deps", []string{"--no-deps", "--exclude", "alpha,nope"}},
 	}
 
 	for _, tt := range tests {
@@ -333,7 +362,7 @@ func TestModsUpdateUnknownNames(t *testing.T) {
 			eng, f, cdb := setupMods(t)
 
 			code, _, stderr := runWithCDB(t, eng, cdb, append([]string{"mods", "update"}, tt.args...)...)
-			if code != exitError || !strings.Contains(stderr, "not installed: nope") {
+			if code != exitError || !strings.Contains(stderr, "not installed") || !strings.Contains(stderr, ": nope") {
 				t.Errorf("code = %d, stderr = %q", code, stderr)
 			}
 			if got := f.downloaded(); got != "" {
@@ -405,6 +434,286 @@ func TestModsUpdateCombinedShortFlags(t *testing.T) {
 	}
 	if got := f.downloaded(); got != "" {
 		t.Errorf("downloaded = %q, want nothing", got)
+	}
+}
+
+// setupDeps is setupMods where alpha's new release needs "lib", which amy/lib provides.
+func setupDeps(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
+	t.Helper()
+
+	eng, f, cdb := setupMods(t)
+	f.packagesJSON = `[{"author": "amy", "name": "lib", "type": "mod", "release": 9}]`
+	f.depsJSON = map[string]string{
+		"jane/alpha": `{"jane/alpha": [{"name": "lib", "is_optional": false, "packages": ["amy/lib"]}]}`,
+	}
+
+	return eng, f, cdb
+}
+
+func TestModsUpdateInstallsNewDependency(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "update", "-y")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "lib,alpha,beta" {
+		t.Errorf("downloaded = %q, want lib,alpha,beta", got)
+	}
+	if !strings.Contains(stdout, "amy/lib: installed 9 (dependency of jane/alpha)") {
+		t.Errorf("stdout = %q", stdout)
+	}
+
+	conf, err := os.ReadFile(filepath.Join(eng.ModsDir, "lib", "mod.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"name = lib", "author = amy", "release = 9"} {
+		if !strings.Contains(string(conf), want) {
+			t.Errorf("lib mod.conf = %q, want %q in it", conf, want)
+		}
+	}
+}
+
+func TestModsUpdateDryRunShowsDependencies(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "update", "-n")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "Would install as dependencies:") || !strings.Contains(stdout, "amy/lib") {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if got := f.downloaded(); got != "" {
+		t.Errorf("downloaded = %q, want nothing", got)
+	}
+}
+
+func TestModsUpdateNoDeps(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update", "--no-deps")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+	if f.listRequests != 0 {
+		t.Errorf("package list requested %d times, want 0", f.listRequests)
+	}
+}
+
+func TestModsUpdateDependencyAlreadyInstalled(t *testing.T) {
+	tests := []struct {
+		name string
+		path []string // under the mods dir
+	}{
+		{"as a mod", []string{"lib", "init.lua"}},
+		{"in a modpack", []string{"pack", "lib", "init.lua"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng, f, cdb := setupDeps(t)
+			writeFile(t, filepath.Join(eng.ModsDir, "pack", "modpack.conf"), "name = pack\n")
+			writeFile(t, filepath.Join(append([]string{eng.ModsDir}, tt.path...)...), "-- hi\n")
+
+			code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update")
+			if code != exitOK {
+				t.Fatalf("code = %d, stderr = %q", code, stderr)
+			}
+			if got := f.downloaded(); got != "alpha,beta" {
+				t.Errorf("downloaded = %q, want alpha,beta", got)
+			}
+		})
+	}
+}
+
+func TestModsUpdateGameProvidesDependency(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+	eng.GamesDir = t.TempDir()
+	writeFile(t, filepath.Join(eng.GamesDir, "mygame", "game.conf"), "title = My Game\n")
+	writeFile(t, filepath.Join(eng.GamesDir, "mygame", "mods", "lib", "init.lua"), "-- hi\n")
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update", "--game", "mygame")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+
+	code, _, stderr = runWithCDB(t, eng, cdb, "mods", "update", "--game", "nope")
+	if code != exitError || !strings.Contains(stderr, "game not installed: nope") {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+}
+
+func TestModsUpdateExcludeDependency(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update", "-x", "lib")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "skipping excluded dependency lib for jane/alpha") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+}
+
+func TestModsUpdateDependencyNotFound(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+	f.packagesJSON = ""
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "could not find dependency lib for jane/alpha") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+}
+
+func TestModsUpdateDependencyFolderExists(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+	// not a loadable mod, so it doesn't satisfy the dependency
+	writeFile(t, filepath.Join(eng.ModsDir, "lib", "notes.txt"), "mine")
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update", "-y")
+	if code != exitError {
+		t.Errorf("code = %d, want %d", code, exitError)
+	}
+	if !strings.Contains(stderr, "amy/lib: install failed") || !strings.Contains(stderr, "1 of 1 dependency installs failed") {
+		t.Errorf("stderr = %q", stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+	if data, err := os.ReadFile(filepath.Join(eng.ModsDir, "lib", "notes.txt")); err != nil || string(data) != "mine" {
+		t.Errorf("existing folder was changed: %q, %v", data, err)
+	}
+}
+
+func TestModsUpdateDependencyInvalidName(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+	f.packagesJSON = `[{"author": "amy", "name": "lib.d", "type": "mod", "release": 9}]`
+	f.depsJSON = map[string]string{
+		"jane/alpha": `{"jane/alpha": [{"name": "lib", "is_optional": false, "packages": ["amy/lib.d"]}]}`,
+	}
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update", "-y")
+	if code != exitError || !strings.Contains(stderr, "invalid package name") {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+	if _, err := os.Stat(filepath.Join(eng.ModsDir, "lib.d")); err == nil {
+		t.Error("a folder was created for the invalid name")
+	}
+}
+
+func TestModsUpdateDependencyInstallFails(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+	f.failFor = map[string]bool{"lib": true}
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update", "-y")
+	if code != exitError || !strings.Contains(stderr, "1 of 1 dependency installs failed") {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+	if rel := installedReleases(t, eng.ModsDir); rel["alpha"] != 2 || rel["beta"] != 3 {
+		t.Errorf("releases after update = %v, want the updates still applied", rel)
+	}
+}
+
+// runAnswering runs args as if stdin were a terminal on which the user typed input.
+func runAnswering(t *testing.T, eng engine.Info, cdb *contentdb.Client, input string, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
+
+	var out, errOut bytes.Buffer
+	c := &ctx{eng: eng, cdb: cdb, stdout: &out, stderr: &errOut, stdin: strings.NewReader(input), interactive: true}
+	code = c.run(args)
+
+	return code, out.String(), errOut.String()
+}
+
+func TestModsUpdateConfirmsNewDependencies(t *testing.T) {
+	tests := []struct {
+		input string
+		want  bool
+	}{
+		{"y\n", true},
+		{"YES\n", true},
+		{"n\n", false},
+		{"\n", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			eng, f, cdb := setupDeps(t)
+
+			code, stdout, stderr := runAnswering(t, eng, cdb, tt.input, "mods", "update")
+			if !strings.Contains(stderr, "Will also install as dependencies:") || !strings.Contains(stderr, "amy/lib") ||
+				!strings.Contains(stderr, "Continue? [y/N]") {
+				t.Errorf("stderr = %q, want the plan and a prompt", stderr)
+			}
+
+			if tt.want {
+				if code != exitOK || f.downloaded() != "lib,alpha,beta" {
+					t.Errorf("code = %d, downloaded = %q, stderr = %q", code, f.downloaded(), stderr)
+				}
+				return
+			}
+
+			if code != exitError || !strings.Contains(stderr, "aborted") || stdout != "" {
+				t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+			}
+			if got := f.downloaded(); got != "" {
+				t.Errorf("downloaded = %q, want nothing", got)
+			}
+		})
+	}
+}
+
+func TestModsUpdateNoPromptWithoutNewDependencies(t *testing.T) {
+	eng, f, cdb := setupMods(t)
+
+	code, _, stderr := runAnswering(t, eng, cdb, "", "mods", "update")
+	if code != exitOK || strings.Contains(stderr, "Continue?") {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "alpha,beta" {
+		t.Errorf("downloaded = %q, want alpha,beta", got)
+	}
+}
+
+func TestModsUpdateNewDependenciesWithoutTerminal(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update")
+	if code != exitError || !strings.Contains(stderr, "new dependencies required (amy/lib), rerun with -y or --no-deps") {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "" {
+		t.Errorf("downloaded = %q, want nothing", got)
+	}
+}
+
+func TestModsUpdateDryRunNeverPrompts(t *testing.T) {
+	eng, _, cdb := setupDeps(t)
+
+	code, _, stderr := runAnswering(t, eng, cdb, "", "mods", "update", "-n")
+	if code != exitOK || strings.Contains(stderr, "Continue?") {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
 	}
 }
 
