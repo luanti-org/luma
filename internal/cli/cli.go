@@ -7,11 +7,13 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/pflag"
 
 	"github.com/luanti-org/luma/internal/contentdb"
@@ -31,6 +33,9 @@ type ctx struct {
 	cdb    *contentdb.Client
 	stdout io.Writer
 	stderr io.Writer
+
+	stdin       io.Reader
+	interactive bool // stdin is a terminal, so the user can be asked to confirm
 
 	cmdName string // e.g. "mods update"
 	cmd     verb
@@ -57,7 +62,7 @@ var commands = map[string]noun{
 		verbs: map[string]verb{
 			"list":     {"[--names]", "list installed mods", modsList},
 			"outdated": {"[--names]", "list mods with a newer release on ContentDB", modsOutdated},
-			"update":   {"[-n] [-x a,b] [name...]", "update the named mods, or all outdated mods if none are named", modsUpdate},
+			"update":   {"[-n] [-y] [-x a,b] [--no-deps] [--game id] [name...]", "update the named mods, or all outdated mods if none are named, with any new dependencies", modsUpdate},
 		},
 	},
 }
@@ -82,7 +87,8 @@ func Run(args []string, eng engine.Info, stdout, stderr io.Writer) int {
 	cdb := contentdb.New("")
 	cdb.HTTPClient = &http.Client{Timeout: cdbRequestTimeout} // don't share/mutate http.DefaultClient
 
-	c := &ctx{eng: eng, cdb: cdb, stdout: stdout, stderr: stderr}
+	c := &ctx{eng: eng, cdb: cdb, stdout: stdout, stderr: stderr, stdin: os.Stdin}
+	c.interactive = isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
 
 	return c.run(args)
 }
