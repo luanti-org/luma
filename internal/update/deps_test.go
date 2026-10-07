@@ -3,9 +3,12 @@ package update
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
 )
@@ -255,5 +258,63 @@ func TestFetchPackageIndex(t *testing.T) {
 	}
 	if query != "engine_version=5.13.0&protocol_version=48" {
 		t.Errorf("query = %q, want both version params", query)
+	}
+}
+
+func TestResolveModDepsUsesUpdatesAsRoots(t *testing.T) {
+	client, _ := newDepsServer(t, map[string]string{
+		"jane/root": `{"jane/root": [{"name": "lib", "is_optional": false, "packages": ["amy/lib"]}]}`,
+		"amy/lib":   `{"amy/lib": []}`,
+	})
+
+	updates := []ModUpdate{{Mod: content.Mod{Name: "root", Author: "jane"}, LatestRelease: 2}}
+
+	plan, err := ResolveModDeps(client, updates, map[string]bool{}, index(mod("amy", "lib", 3)), nil)
+	if err != nil {
+		t.Fatalf("ResolveModDeps: %v", err)
+	}
+	if got, want := installIDs(plan), []string{"amy/lib"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("install = %v, want %v", got, want)
+	}
+}
+
+func TestInstallDep(t *testing.T) {
+	zipData := buildZip(t, "amy-lib-abc123", map[string]string{"mod.conf": "name = lib\n", "init.lua": "-- hi\n"})
+
+	var requests []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Path+"?reason="+r.URL.Query().Get("reason"))
+		w.Write(zipData)
+	}))
+	t.Cleanup(srv.Close)
+	client := contentdb.New(srv.URL)
+
+	modsDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(modsDir, "taken"), 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	if err := InstallDep(client, modsDir, DepInstall{Package: mod("amy", "lib", 3)}); err != nil {
+		t.Fatalf("InstallDep: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(modsDir, "lib", "mod.conf"))
+	if err != nil {
+		t.Fatalf("reading mod.conf: %v", err)
+	}
+	if want := "name = lib\nauthor = amy\nrelease = 3\n"; string(data) != want {
+		t.Errorf("mod.conf = %q, want %q", data, want)
+	}
+	if want := []string{"/packages/amy/lib/releases/3/download/?reason=" + contentdb.ReasonDependency}; !reflect.DeepEqual(requests, want) {
+		t.Errorf("requests = %v, want %v", requests, want)
+	}
+
+	for _, name := range []string{"taken", "lib.d", "../up"} {
+		if err := InstallDep(client, modsDir, DepInstall{Package: mod("amy", name, 1)}); err == nil {
+			t.Errorf("%s: expected an error", name)
+		}
+	}
+	if len(requests) != 1 {
+		t.Errorf("requests = %v, want none for the refused installs", requests)
 	}
 }

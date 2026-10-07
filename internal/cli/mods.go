@@ -7,15 +7,12 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/luanti-org/luma/internal/content"
-	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/update"
 )
 
@@ -201,7 +198,7 @@ func modsUpdate(c *ctx, args []string) int {
 	depsFailed := 0
 	for _, d := range deps.Install {
 		id := d.Package.Author + "/" + d.Package.Name
-		if err := c.installDep(d); err != nil {
+		if err := update.InstallDep(c.cdb, c.eng.ModsDir, d); err != nil {
 			depsFailed++
 			fmt.Fprintf(c.stderr, "luma: %s: install failed: %v\n", id, err)
 			continue
@@ -239,17 +236,12 @@ func (c *ctx) resolveDeps(plan []update.ModUpdate, provided map[string]bool, exc
 		return update.DepPlan{}, fmt.Errorf("fetching package list: %w", err)
 	}
 
-	roots := make([]string, len(plan))
-	for i, u := range plan {
-		roots[i] = u.Mod.Author + "/" + u.Mod.Name
-	}
-
 	skip := make(map[string]bool, len(excluded))
 	for _, n := range excluded {
 		skip[n] = true
 	}
 
-	return update.ResolveDeps(c.cdb, roots, provided, index, skip)
+	return update.ResolveModDeps(c.cdb, plan, provided, index, skip)
 }
 
 // unusedExcludes returns the names in depExcludes that no dependency in deps was excluded by.
@@ -272,24 +264,6 @@ func unusedExcludes(depExcludes []string, deps update.DepPlan) []string {
 		}
 	}
 	return unused
-}
-
-var packageNameRe = regexp.MustCompile(`^[a-z0-9_]+$`)
-
-func (c *ctx) installDep(d update.DepInstall) error {
-	// the name comes from the network and becomes a folder name
-	if !packageNameRe.MatchString(d.Package.Name) {
-		return fmt.Errorf("invalid package name %q", d.Package.Name)
-	}
-
-	dest := filepath.Join(c.eng.ModsDir, d.Package.Name)
-
-	// InstallMod replaces its target, which here would be a folder luma didn't put there
-	if _, err := os.Stat(dest); err == nil {
-		return fmt.Errorf("folder %s already exists", dest)
-	}
-
-	return update.InstallMod(c.cdb, d.Package.Author, d.Package.Name, d.Package.Release, dest, contentdb.ReasonDependency)
 }
 
 // scanGameMods scans the mods of the installed game id, reporting any error itself. ok is false on failure.
