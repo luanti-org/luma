@@ -1,35 +1,30 @@
 # luma
 
-A terminal UI for managing Luanti mods and games, with ContentDB integration.
+A terminal UI and command line tool for managing Luanti mods, games and texture packs, with ContentDB integration.
 
 **Status: work in progress.** Expect missing features and rough edges.
 
-Until release is made, the only way to use this is to have go installed, at later stages a binary per platform will be made available.
+No binaries are released yet, so [Go](https://go.dev/) is needed to run luma from a checkout.
 
 ## Usage
+
+Open the terminal UI:
 
     go run . --dir /path/to/luanti
     go run . --flatpak
 
-`--dir` (or `-d`) is the Luanti install folder (the one containing `mods/` and `games/`); it defaults to the current directory.
-`--flatpak` uses the Luanti flatpak install instead. If no install is found, luma exits with an error.
-The engine version is read from the engine binary, then from `builtin/game/misc_s.lua`; if neither works, luma exits with an error.
-`--engine-version` (or `-e`) overrides the detected engine version and is checked against ContentDB. Examples: `-e 5.17`, `-e 5.18-dev`. Use it only if detection fails or you know what you're doing.
-Run `go run . -h` for flags.
+`--dir` (or `-d`) is the Luanti install folder, the one containing `mods/` and `games/`. It defaults to the current directory. `--flatpak` uses the Luanti flatpak install instead.
 
-### Command line
+Or run a single command without opening it:
 
-Passing a command runs it without opening the terminal UI. Global flags such as `--dir` go before the command:
+    go run . --dir /path/to/luanti mods outdated
+    go run . --dir /path/to/luanti mods update
 
-    luma --dir /path/to/luanti mods list
-    luma mods outdated
-    luma mods update                     # update all outdated mods
-    luma mods update -n                  # show what would be updated
-    luma mods update -x foo,bar          # update all except foo and bar
-    luma mods update foo bar             # update only foo and bar
+## Documentation
 
-`mods list` and `mods outdated` take `--names` to print only mod names, one per line.
-Run `luma --help` for the command groups, `luma mods --help` for their commands, and `luma mods update --help` for a command's flags.
+* [Terminal UI](docs/terminal-ui.md): screens, keys, updating mods
+* [Command line](docs/cli.md): commands and their flags
+* [Global flags](docs/global-flags.md): choosing the install and the engine version
 
 ## Roadmap
 

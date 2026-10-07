@@ -16,6 +16,7 @@ import (
 const (
 	modsCmdCheckUpdates = iota
 	modsCmdUpdateAll
+	modsCmdGame
 	modsRowCount // one past the last row, i.e. the row count
 )
 
@@ -37,27 +38,40 @@ func (m model) checkModUpdatesCmd() tea.Cmd {
 	}
 }
 
-// modUpdateResult is one entry's outcome from an update run.
-type modUpdateResult struct {
-	mod update.ModUpdate
-	err error
+// modRunStep is one download of an update run, a new dependency or a mod update.
+type modRunStep struct {
+	isDep  bool
+	dep    update.DepInstall
+	update update.ModUpdate
 }
 
-// modUpdateStepMsg is delivered when one mod's download+install finishes.
+// modUpdateResult is one step's outcome from an update run.
+type modUpdateResult struct {
+	step modRunStep
+	err  error
+}
+
+// modUpdateStepMsg is delivered when one step's download+install finishes.
 type modUpdateStepMsg struct {
 	index int // position in m.modUpdateQueue that was just attempted
 	err   error
 }
 
-// updateModStepCmd downloads and installs a single update,
+// updateModStepCmd downloads and installs a single step,
 // one mod at a time.
 // Chaining these is what lets the UI show per-mod progress as each step completes
 func (m model) updateModStepCmd(index int) tea.Cmd {
 	client := m.cdb
-	u := m.modUpdateQueue[index]
+	modsDir := m.engInfo.ModsDir
+	step := m.modUpdateQueue[index]
 
 	return func() tea.Msg {
-		err := update.UpdateMod(client, u)
+		var err error
+		if step.isDep {
+			err = update.InstallDep(client, modsDir, step.dep)
+		} else {
+			err = update.UpdateMod(client, step.update)
+		}
 		return modUpdateStepMsg{index: index, err: err}
 	}
 }
@@ -66,8 +80,8 @@ func (m model) updateModStepCmd(index int) tea.Cmd {
 // kicks off the next one or, once done, ends the mod action.
 func (m model) handleModUpdateStep(msg modUpdateStepMsg) (tea.Model, tea.Cmd) {
 	m.modUpdateResults = append(m.modUpdateResults, modUpdateResult{
-		mod: m.modUpdateQueue[msg.index],
-		err: msg.err,
+		step: m.modUpdateQueue[msg.index],
+		err:  msg.err,
 	})
 	m.modUpdateIdx = msg.index + 1
 
@@ -100,7 +114,7 @@ func (m model) handleModUpdateStep(msg modUpdateStepMsg) (tea.Model, tea.Cmd) {
 // modUpdateSucceeded reports whether the last run updated the mod at path.
 func (m model) modUpdateSucceeded(path string) bool {
 	for _, r := range m.modUpdateResults {
-		if r.mod.Mod.Path == path && r.err == nil {
+		if !r.step.isDep && r.step.update.Mod.Path == path && r.err == nil {
 			return true
 		}
 	}
@@ -108,11 +122,33 @@ func (m model) modUpdateSucceeded(path string) bool {
 	return false
 }
 
-// startModUpdates kicks off a run over queue, unless a mod action is already running.
+// startModUpdates resolves the dependencies of queue first, the run starts once that is done.
 func (m model) startModUpdates(queue []update.ModUpdate) (tea.Model, tea.Cmd) {
 	if m.modActionInProgress || len(queue) == 0 {
 		return m, nil
 	}
+
+	m.modActionInProgress = true
+	m.modsResolving = true
+	m.modsResolveErr = nil
+	m.pendingUpdates = queue
+
+	return m, m.resolveModDepsCmd(queue)
+}
+
+// beginModRun installs deps, then applies updates.
+func (m model) beginModRun(updates []update.ModUpdate, deps []update.DepInstall) (tea.Model, tea.Cmd) {
+	var queue []modRunStep
+	for _, d := range deps {
+		queue = append(queue, modRunStep{isDep: true, dep: d})
+	}
+	for _, u := range updates {
+		queue = append(queue, modRunStep{update: u})
+	}
+
+	m.pendingUpdates = nil
+	m.pendingDeps = update.DepPlan{}
+	m.modsResolveErr = nil
 
 	m.modActionInProgress = true
 	m.modsUpdating = true
@@ -176,6 +212,12 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case modsCmdUpdateAll:
 				queue := append([]update.ModUpdate(nil), m.modUpdates...)
 				return m.startModUpdates(queue)
+
+			case modsCmdGame:
+				if m.modActionInProgress {
+					break
+				}
+				return m.openGamePicker(), nil
 			}
 			break
 		}
@@ -209,12 +251,17 @@ func (m model) modsCommandLabel(row int) string {
 		return m.checkUpdatesLabel()
 	case modsCmdUpdateAll:
 		return m.updateAllLabel()
+	case modsCmdGame:
+		return "Base game for dependencies: " + gameLabel(m.modsGame)
 	default:
 		return ""
 	}
 }
 
 func (m model) updateAllLabel() string {
+	if m.modsResolving {
+		return "Resolving dependencies..."
+	}
 	if m.modsUpdating {
 		return fmt.Sprintf("Updating mods... (%d/%d)", m.modUpdateIdx, len(m.modUpdateQueue))
 	}

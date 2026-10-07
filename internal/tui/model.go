@@ -27,6 +27,8 @@ const (
 	screenMods
 	screenModDetail
 	screenModpackModDetail
+	screenGamePicker
+	screenUpdateConfirm
 	screenGames
 	screenGameDetail
 	screenTexturepacks
@@ -61,8 +63,8 @@ type model struct {
 	modUpdates      []update.ModUpdate
 
 	modsUpdating     bool
-	modUpdateQueue   []update.ModUpdate // what the current/last run updates, one or all
-	modUpdateIdx     int                // count of update attempts completed so far, into modUpdateQueue
+	modUpdateQueue   []modRunStep // what the current/last run installs and updates
+	modUpdateIdx     int          // count of steps completed so far, into modUpdateQueue
 	modUpdateResults []modUpdateResult
 
 	selectedMod content.Mod
@@ -71,6 +73,22 @@ type model struct {
 	modpackModsCursor int
 
 	selectedModpackMod content.Mod
+
+	modsGame     content.Game // game whose mods count as installed, zero value for none
+	pickerGames  []content.Game
+	pickerErr    error
+	pickerCursor int
+
+	modsResolving  bool
+	modsResolveErr error
+	packageIndex   map[string]contentdb.Package // fetched once per session
+
+	// what the confirm screen is asking about
+	pendingUpdates     []update.ModUpdate
+	pendingDeps        update.DepPlan
+	confirmInstallDeps bool
+	confirmCursor      int
+	confirmReturn      screen
 
 	games       []content.Game
 	gamesErr    error
@@ -124,6 +142,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if resolvedMsg, ok := msg.(modDepsResolvedMsg); ok {
+		return m.handleModDepsResolved(resolvedMsg)
+	}
+
 	if stepMsg, ok := msg.(modUpdateStepMsg); ok {
 		return m.handleModUpdateStep(stepMsg)
 	}
@@ -150,6 +172,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateModDetail(keyMsg)
 	case screenModpackModDetail:
 		return m.updateModpackModDetail(keyMsg)
+	case screenGamePicker:
+		return m.updateGamePicker(keyMsg)
+	case screenUpdateConfirm:
+		return m.updateUpdateConfirm(keyMsg)
 	case screenGames:
 		return m.updateGames(keyMsg)
 	case screenGameDetail:
@@ -171,6 +197,10 @@ func (m model) View() string {
 		return m.viewModDetail()
 	case screenModpackModDetail:
 		return m.viewModpackModDetail()
+	case screenGamePicker:
+		return m.viewGamePicker()
+	case screenUpdateConfirm:
+		return m.viewUpdateConfirm()
 	case screenGames:
 		return m.viewGames()
 	case screenGameDetail:

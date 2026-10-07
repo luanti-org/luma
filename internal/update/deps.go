@@ -2,6 +2,9 @@ package update
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/luanti-org/luma/internal/contentdb"
@@ -72,6 +75,36 @@ func ResolveDeps(client *contentdb.Client, roots []string, installed map[string]
 	}
 
 	return r.plan, nil
+}
+
+// ResolveModDeps plans the new dependencies of the mods in updates, see ResolveDeps.
+func ResolveModDeps(client *contentdb.Client, updates []ModUpdate, installed map[string]bool,
+	packages map[string]contentdb.Package, excluded map[string]bool) (DepPlan, error) {
+	roots := make([]string, len(updates))
+	for i, u := range updates {
+		roots[i] = u.Mod.Author + "/" + u.Mod.Name
+	}
+
+	return ResolveDeps(client, roots, installed, packages, excluded)
+}
+
+var packageNameRe = regexp.MustCompile(`^[a-z0-9_]+$`)
+
+// InstallDep installs d into a new folder under modsDir, never replacing an existing one.
+func InstallDep(client *contentdb.Client, modsDir string, d DepInstall) error {
+	// the name comes from the network and becomes a folder name
+	if !packageNameRe.MatchString(d.Package.Name) {
+		return fmt.Errorf("invalid package name %q", d.Package.Name)
+	}
+
+	dest := filepath.Join(modsDir, d.Package.Name)
+
+	// InstallMod replaces its target, which here would be a folder luma didn't put there
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("folder %s already exists", dest)
+	}
+
+	return InstallMod(client, d.Package.Author, d.Package.Name, d.Package.Release, dest, contentdb.ReasonDependency)
 }
 
 type depResolver struct {
