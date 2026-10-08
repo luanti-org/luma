@@ -17,12 +17,12 @@ Both need to know which Luanti install to work on, see [Global flags](global-fla
 
 ## Running
 
-No binaries are released yet, so [Go](https://go.dev/) is needed to run luma from a checkout of the [repository](https://github.com/luanti-org/luma):
+Download the archive for your platform from the [releases page](https://github.com/luanti-org/luma/releases), extract it, and put `luma` (`luma.exe` on Windows) somewhere on your `PATH`:
 
-    go run . --dir /path/to/luanti
-    go run . --flatpak
+    luma --dir /path/to/luanti
+    luma --flatpak
 
-The rest of these pages write `luma` for the command. Until a binary is available, use `go run .` in its place.
+With [Go](https://go.dev/) installed, luma can also be installed with `go install github.com/luanti-org/luma@latest`, or run from a checkout of the [repository](https://github.com/luanti-org/luma) by using `go run .` in place of `luma`.
 
 ## Roadmap
 

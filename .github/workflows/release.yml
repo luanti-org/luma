@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: check tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::release tag '$TAG' must look like v1.2.3 or v1.2.3-rc1"
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go test ./...
+      - name: build
+        run: |
+          version="${TAG#v}"
+          mkdir dist
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            name="luma-$version-$os-$arch"
+            bin=luma
+            [ "$os" = windows ] && bin=luma.exe
+            mkdir "$name"
+            GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath \
+              -ldflags "-s -w -X github.com/luanti-org/luma/internal/version.Version=$version" \
+              -o "$name/$bin" .
+            cp LICENSE README.md "$name/"
+            if [ "$os" = windows ]; then
+              zip -r "dist/$name.zip" "$name"
+            else
+              tar -czf "dist/$name.tar.gz" "$name"
+            fi
+          done
+          cd dist && sha256sum * > SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - name: upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/* --clobber
