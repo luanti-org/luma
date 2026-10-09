@@ -60,6 +60,38 @@ func TestCheckAllModUpdatesSkipsUpToDateMod(t *testing.T) {
 	}
 }
 
+func TestCheckAllModUpdatesSkipsModNewerThanContentDB(t *testing.T) {
+	client := newTestServer(t, `{"jane/mymod": 42}`)
+
+	mods := []content.Mod{
+		{Name: "mymod", Author: "jane", Release: 43, ConfOK: true},
+	}
+
+	updates, err := CheckAllModUpdates(mods, client, engine.Info{})
+	if err != nil {
+		t.Fatalf("CheckAllModUpdates: %v", err)
+	}
+	if len(updates) != 0 {
+		t.Errorf("updates = %+v, want none", updates)
+	}
+}
+
+func TestCheckAllModUpdatesMatchesAuthorCaseInsensitively(t *testing.T) {
+	client := newTestServer(t, `{"Jane/mymod": 42}`)
+
+	mods := []content.Mod{
+		{Name: "mymod", Author: "jAnE", Release: 40, ConfOK: true},
+	}
+
+	updates, err := CheckAllModUpdates(mods, client, engine.Info{})
+	if err != nil {
+		t.Fatalf("CheckAllModUpdates: %v", err)
+	}
+	if len(updates) != 1 || updates[0].LatestRelease != 42 {
+		t.Errorf("updates = %+v, want 1 entry at release 42", updates)
+	}
+}
+
 func TestCheckAllModUpdatesSkipsUnmatchedMod(t *testing.T) {
 	client := newTestServer(t, `{"jane/mymod": 42}`)
 
