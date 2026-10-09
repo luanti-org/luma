@@ -5,6 +5,7 @@ package update
 import (
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
@@ -27,6 +28,8 @@ func CheckAllModUpdates(mods []content.Mod, client *contentdb.Client, engineInfo
 	if err != nil {
 		return nil, err
 	}
+
+	latest = lowerKeys(latest)
 
 	var updates []ModUpdate
 	for _, mod := range mods {
@@ -76,14 +79,23 @@ func modConfPath(dir string) string {
 	return filepath.Join(dir, "mod.conf")
 }
 
-// matchModUpdate reports whether mod has a newer release in latest
+// lowerKeys returns m with lowercase keys, ContentDB ids are case-insensitive
+func lowerKeys(m map[string]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for k, v := range m {
+		out[strings.ToLower(k)] = v
+	}
+	return out
+}
+
+// matchModUpdate reports whether mod has a newer release in latest, whose keys must be lowercase
 func matchModUpdate(mod content.Mod, latest map[string]int) (ModUpdate, bool) {
 	if mod.Author == "" {
 		return ModUpdate{}, false
 	}
 
-	release, ok := latest[mod.Author+"/"+mod.Name]
-	if !ok || release == mod.Release {
+	release, ok := latest[strings.ToLower(mod.Author+"/"+mod.Name)]
+	if !ok || release <= mod.Release {
 		return ModUpdate{}, false
 	}
 
