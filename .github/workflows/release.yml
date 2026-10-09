@@ -21,8 +21,8 @@ jobs:
             echo "::error::release tag '$TAG' must look like v1.2.3 or v1.2.3-rc1"
             exit 1
           fi
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - run: go test ./...
@@ -48,7 +48,7 @@ jobs:
             fi
           done
           cd dist && sha256sum * > SHA256SUMS
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
       - name: upload
