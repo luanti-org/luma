@@ -120,21 +120,22 @@ func TestDownloadPackageCleansUpTempFiles(t *testing.T) {
 
 	destDir := filepath.Join(t.TempDir(), "mymod")
 
-	before, err := os.ReadDir(os.TempDir())
-	if err != nil {
-		t.Fatalf("ReadDir tmp: %v", err)
+	// a private temp dir, the system one is shared with tests running in parallel
+	tmpDir := t.TempDir()
+	for _, env := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(env, tmpDir)
 	}
 
 	if err := DownloadPackage(client, downloadURL, destDir); err != nil {
 		t.Fatalf("DownloadPackage: %v", err)
 	}
 
-	after, err := os.ReadDir(os.TempDir())
+	left, err := os.ReadDir(tmpDir)
 	if err != nil {
 		t.Fatalf("ReadDir tmp: %v", err)
 	}
-	if len(after) != len(before) {
-		t.Errorf("tmp dir entry count changed: before=%d after=%d (leaked temp file/dir?)", len(before), len(after))
+	for _, entry := range left {
+		t.Errorf("leaked temp entry %s", entry.Name())
 	}
 }
 

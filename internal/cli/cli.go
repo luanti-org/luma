@@ -57,6 +57,14 @@ type noun struct {
 // commands is the registry of every noun and its verbs. Add new commands here and help picks them up.
 // Each verb's handler parses its own flags from args, so nothing else in this file needs to change.
 var commands = map[string]noun{
+	"games": {
+		summary: "manage installed games",
+		verbs: map[string]verb{
+			"list":     {"[--names]", "list installed games", gamesList},
+			"outdated": {"[--names]", "list games with a newer release on ContentDB", gamesOutdated},
+			"update":   {"[-n] [-x a,b] [id...]", "update the named games, or all outdated games if none are named", gamesUpdate},
+		},
+	},
 	"mods": {
 		summary: "manage installed mods",
 		verbs: map[string]verb{

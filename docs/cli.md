@@ -88,3 +88,49 @@ To skip a dependency, put its mod name or its package name in `--exclude`. A dep
 A dependency is installed into a folder named after its package. If that folder already exists, the dependency is not installed and is counted as a failure.
 
 If an update or a dependency install fails, the rest still go ahead, and luma exits with code 1 after reporting how many failed.
+
+## games
+
+Games are named by their folder name in the games folder, such as `minetest_game`.
+
+### games list
+
+Lists the installed games with their author, release number and title. `-` stands for a value the game doesn't declare.
+
+    luma games list
+    luma games list --names
+
+`--names` prints only the folder names, one per line.
+
+### games outdated
+
+Lists the games that have a newer release on ContentDB, with their current and latest release numbers.
+
+    luma games outdated
+    luma games outdated --names
+
+Takes `--names` too.
+
+Only games installed from ContentDB are checked, which means those with both an `author` and a `release` in their `game.conf`. As in the Luanti client, the one exception is a Minetest Game without a release, as bundled with engines up to 5.8. It counts as outdated unless it is a git checkout.
+
+### games update
+
+Updates the named games, or all outdated games if none are named. Updating replaces the game's folder with the new release, so changes made inside that folder are lost. Worlds are not affected.
+
+    luma games update                   # update all outdated games
+    luma games update mineclonia        # update only mineclonia
+    luma games update -x mineclonia     # update all except mineclonia
+    luma games update -n                # show what would be updated
+
+| flag | meaning |
+|---|---|
+| `-n`, `--dry-run` | show what would be updated without changing anything |
+| `-x`, `--exclude` | comma-separated game folder names to skip |
+
+Games have no dependencies to install, so there is nothing to confirm.
+
+Naming a game that is not installed, as an argument or in `--exclude`, is an error, and nothing is updated.
+
+Named games with no update, or with no author or release in their `game.conf`, are reported and skipped.
+
+If an update fails, the rest still go ahead, and luma exits with code 1 after reporting how many failed.
