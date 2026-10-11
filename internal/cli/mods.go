@@ -330,6 +330,9 @@ func planUpdates(c *ctx, installed map[string]content.Mod, updates []update.ModU
 }
 
 func noUpdateReason(m content.Mod) string {
+	if m.Release <= 0 && update.IsGitCheckout(m.Path) {
+		return "git checkout with no release, skipped"
+	}
 	if m.Author != "" {
 		return "no update available"
 	}

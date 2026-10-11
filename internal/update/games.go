@@ -1,7 +1,6 @@
 package update
 
 import (
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -101,9 +100,7 @@ func isUnversionedMinetestGame(game content.Game) bool {
 		return false
 	}
 
-	// a git checkout is the user's own, an update would wipe it
-	_, err := os.Stat(filepath.Join(game.Path, ".git"))
-	return os.IsNotExist(err)
+	return !IsGitCheckout(game.Path)
 }
 
 // normalizeGameID strips the "_game" suffix the engine ignores in game folder names.

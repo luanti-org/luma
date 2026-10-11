@@ -195,6 +195,42 @@ func TestCheckAllModUpdatesUnknownInstalledReleaseCountsAsOutdated(t *testing.T)
 	}
 }
 
+func TestCheckAllModUpdatesSkipsGitCheckoutWithoutRelease(t *testing.T) {
+	client := newTestServer(t, `{"jane/mymod": 42, "jane/sub": 42, "jane/released": 42, "jane/plain": 42}`)
+
+	dir := filepath.Join(t.TempDir(), "mymod")
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// a submodule or worktree has a .git file instead of a folder
+	sub := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../.git/modules/sub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// installed from a ContentDB zip that shipped a .git
+	released := t.TempDir()
+	if err := os.Mkdir(filepath.Join(released, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	mods := []content.Mod{
+		{Name: "mymod", Author: "jane", Release: 0, Path: dir, ConfOK: true},
+		{Name: "sub", Author: "jane", Release: 0, Path: sub, ConfOK: true},
+		{Name: "released", Author: "jane", Release: 40, Path: released, ConfOK: true},
+		{Name: "plain", Author: "jane", Release: 0, Path: t.TempDir(), ConfOK: true},
+	}
+
+	updates, err := CheckAllModUpdates(mods, client, engine.Info{})
+	if err != nil {
+		t.Fatalf("CheckAllModUpdates: %v", err)
+	}
+	if len(updates) != 2 || updates[0].Mod.Name != "released" || updates[1].Mod.Name != "plain" {
+		t.Errorf("updates = %+v, want released and plain", updates)
+	}
+}
+
 func TestUpdateModDownloadsAndInstallsLatestRelease(t *testing.T) {
 	zipData := buildZip(t, "jane-mymod-abc123", map[string]string{
 		"mod.conf": "name = mymod\ndepends = default\n",

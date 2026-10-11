@@ -317,6 +317,36 @@ func TestModsUpdateNamedNoAuthor(t *testing.T) {
 	}
 }
 
+func TestModsUpdateSkipsGitCheckoutWithoutRelease(t *testing.T) {
+	eng, f, cdb := setupMods(t)
+	writeFile(t, filepath.Join(eng.ModsDir, "alpha", "mod.conf"), "name = alpha\nauthor = jane\n")
+	writeFile(t, filepath.Join(eng.ModsDir, "alpha", ".git", "HEAD"), "ref: refs/heads/main\n")
+	// has a release, so it came from a ContentDB zip that shipped a .git
+	writeFile(t, filepath.Join(eng.ModsDir, "beta", ".git", "HEAD"), "ref: refs/heads/main\n")
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "outdated", "--names")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if strings.Contains(stdout, "alpha") || !strings.Contains(stdout, "beta") {
+		t.Errorf("outdated = %q, want beta and not alpha", stdout)
+	}
+
+	code, stdout, stderr = runWithCDB(t, eng, cdb, "mods", "update", "alpha", "beta")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "alpha: git checkout with no release, skipped") {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if got := f.downloaded(); got != "beta" {
+		t.Errorf("downloaded = %q, want beta", got)
+	}
+	if _, err := os.Stat(filepath.Join(eng.ModsDir, "alpha", ".git", "HEAD")); err != nil {
+		t.Error("the git checkout was replaced")
+	}
+}
+
 func TestModsUpdateExclude(t *testing.T) {
 	eng, f, cdb := setupMods(t)
 

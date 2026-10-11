@@ -3,6 +3,7 @@
 package update
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,7 +23,7 @@ type ModUpdate struct {
 // CheckAllModUpdates compares mods against ContentDB's /api/updates/ and
 // returns the ones with a newer release available. Modpacks are included
 // engineInfo provides version for compatible releases.
-// Mods with no author are skipped
+// Mods with no author are skipped, and so are git checkouts with no release
 func CheckAllModUpdates(mods []content.Mod, client *contentdb.Client, engineInfo engine.Info) ([]ModUpdate, error) {
 	latest, err := client.Updates(modUpdatesOptions(engineInfo))
 	if err != nil {
@@ -88,9 +89,20 @@ func lowerKeys(m map[string]int) map[string]int {
 	return out
 }
 
+// IsGitCheckout reports whether dir is a git working copy, which an update would wipe
+func IsGitCheckout(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return !os.IsNotExist(err)
+}
+
 // matchModUpdate reports whether mod has a newer release in latest, whose keys must be lowercase
 func matchModUpdate(mod content.Mod, latest map[string]int) (ModUpdate, bool) {
 	if mod.Author == "" {
+		return ModUpdate{}, false
+	}
+
+	// a ContentDB install always has a release, without one a .git means a clone
+	if mod.Release <= 0 && IsGitCheckout(mod.Path) {
 		return ModUpdate{}, false
 	}
 
