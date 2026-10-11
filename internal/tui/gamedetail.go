@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/luanti-org/luma/internal/util"
 )
 
 func (m model) updateGameDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -30,8 +32,16 @@ func (m model) viewGameDetail() string {
 		s += fmt.Sprintf("description: %s\n", game.Description)
 	}
 
+	if game.Release > 0 {
+		s += fmt.Sprintf("release:     %d\n", game.Release)
+	}
+
 	s += fmt.Sprintf("folder:      %s\n", game.Dir)
 	s += fmt.Sprintf("path:        %s\n", game.Path)
+
+	if m.gameHasUpdate(game) {
+		s += "\n" + util.UpdateTagStyle.Render("Update available") + "\n"
+	}
 
 	s += "\n(esc/backspace to go back, q to quit)\n"
 

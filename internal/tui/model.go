@@ -94,6 +94,19 @@ type model struct {
 	gamesErr    error
 	gamesCursor int
 
+	// gameActionInProgress is the games counterpart of modActionInProgress
+	gameActionInProgress bool
+
+	gamesChecking    bool
+	gamesLastChecked time.Time
+	gamesUpdateErr   error
+	gameUpdates      []update.GameUpdate
+
+	gamesUpdating     bool
+	gameUpdateQueue   []update.GameUpdate // what the current/last run updates
+	gameUpdateIdx     int                 // count of games completed so far, into gameUpdateQueue
+	gameUpdateResults []gameUpdateResult
+
 	selectedGame content.Game
 
 	texturepacks       []content.Texturepack
@@ -150,6 +163,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleModUpdateStep(stepMsg)
 	}
 
+	if checkedMsg, ok := msg.(gameUpdatesCheckedMsg); ok {
+		m.gameActionInProgress = false
+		m.gamesChecking = false
+		m.gamesUpdateErr = checkedMsg.err
+		if checkedMsg.err == nil {
+			m.gamesLastChecked = time.Now()
+			m.gameUpdates = checkedMsg.updates
+		}
+		return m, nil
+	}
+
+	if stepMsg, ok := msg.(gameUpdateStepMsg); ok {
+		return m.handleGameUpdateStep(stepMsg)
+	}
+
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -159,8 +187,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	if keyMsg.String() == "q" && m.modActionInProgress {
-		return m, nil // quitting mid-download could leave a mod folder half-replaced
+	if keyMsg.String() == "q" && m.busy() {
+		return m, nil // quitting mid-download could leave a folder half-replaced
 	}
 
 	switch m.screen {
@@ -212,6 +240,11 @@ func (m model) View() string {
 	default:
 		return m.viewMenu()
 	}
+}
+
+// busy reports whether a mod or game check/update is running, only one runs at a time
+func (m model) busy() bool {
+	return m.modActionInProgress || m.gameActionInProgress
 }
 
 // listRows is how many list rows fit once chrome lines are reserved
