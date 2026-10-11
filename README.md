@@ -1,6 +1,6 @@
 # luma
 
-A terminal UI and command line tool for installing, updating, and managing Luanti packages (mods, games, texture packs), with ContentDB integration. Managing worlds and mod settings is planned.
+A terminal UI and command line tool for installing [WIP], updating, and managing Luanti packages (mods, games, texture packs), with ContentDB integration. Managing worlds and mod settings is planned.
 
 **Status: work in progress.** Expect missing features and rough edges.
 

@@ -52,7 +52,7 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewMenu() string {
-	s := "luanti-contentdb-cli\n\n"
+	s := "luma\n\n"
 
 	for i, choice := range m.choices {
 		cursor := " "
