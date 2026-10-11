@@ -49,6 +49,8 @@ Lists the mods that have a newer release on ContentDB, with their current and la
 
 Takes `--names` too.
 
+Mods with no author in their `mod.conf` can't be matched to a ContentDB package and are not checked. A mod whose folder is a git checkout (it has a `.git` inside) and has no `release` in its `mod.conf` is never listed, since updating would replace the working copy. ContentDB installs always have a `release`, so a mod with one is checked even if it has a `.git`.
+
 ### mods update
 
 Updates the named mods, or all outdated mods if none are named. Updating replaces the mod's folder with the new release.
@@ -69,7 +71,7 @@ Updates the named mods, or all outdated mods if none are named. Updating replace
 
 Naming a mod that is not installed is an error, and nothing is updated. The same goes for a name in `--exclude` that is neither installed nor a new dependency.
 
-Named mods with no update, or with no author in their `mod.conf`, are reported and skipped.
+Named mods with no update, with no author in their `mod.conf`, or that are git checkouts with no release, are reported and skipped.
 
 #### Dependencies
 

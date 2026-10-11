@@ -62,6 +62,8 @@ With `<None>`, only the mods folder is considered. The choice lasts until luma i
 
 Mods with no author in their `mod.conf` (or `modpack.conf`) can't be matched to a ContentDB package, so they are never available for update.
 
+A mod whose folder is a git checkout (it has a `.git` inside) and has no `release` in its `mod.conf` is never available for update either, since updating would replace the working copy.
+
 ## Games
 
 The games screen lists the installed games. Above the list are two actions:
