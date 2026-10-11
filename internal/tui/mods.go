@@ -124,7 +124,7 @@ func (m model) modUpdateSucceeded(path string) bool {
 
 // startModUpdates resolves the dependencies of queue first, the run starts once that is done.
 func (m model) startModUpdates(queue []update.ModUpdate) (tea.Model, tea.Cmd) {
-	if m.modActionInProgress || len(queue) == 0 {
+	if m.busy() || len(queue) == 0 {
 		return m, nil
 	}
 
@@ -201,7 +201,7 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.modsCursor < modsRowCount {
 			switch m.modsCursor {
 			case modsCmdCheckUpdates:
-				if m.modActionInProgress {
+				if m.busy() {
 					break
 				}
 				m.modActionInProgress = true
@@ -214,7 +214,7 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.startModUpdates(queue)
 
 			case modsCmdGame:
-				if m.modActionInProgress {
+				if m.busy() {
 					break
 				}
 				return m.openGamePicker(), nil
@@ -248,7 +248,7 @@ func (m model) modHasUpdate(mod content.Mod) bool {
 func (m model) modsCommandLabel(row int) string {
 	switch row {
 	case modsCmdCheckUpdates:
-		return m.checkUpdatesLabel()
+		return checkUpdatesLabel(m.modsChecking, m.modsUpdateErr, m.modsLastChecked)
 	case modsCmdUpdateAll:
 		return m.updateAllLabel()
 	case modsCmdGame:
@@ -288,14 +288,14 @@ func countModUpdateErrs(results []modUpdateResult) int {
 	return n
 }
 
-func (m model) checkUpdatesLabel() string {
+func checkUpdatesLabel(checking bool, err error, lastChecked time.Time) string {
 	switch {
-	case m.modsChecking:
+	case checking:
 		return "Checking for updates..."
-	case m.modsUpdateErr != nil:
-		return fmt.Sprintf("Check for updates (last check failed: %v)", m.modsUpdateErr)
-	case !m.modsLastChecked.IsZero():
-		age := time.Since(m.modsLastChecked).Round(time.Second)
+	case err != nil:
+		return fmt.Sprintf("Check for updates (last check failed: %v)", err)
+	case !lastChecked.IsZero():
+		age := time.Since(lastChecked).Round(time.Second)
 		return fmt.Sprintf("Check for updates [last checked: %s ago]", age)
 	default:
 		return "Check for updates"

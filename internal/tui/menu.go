@@ -32,7 +32,9 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.screen = screenMods
 		case 1:
-			m.games, m.gamesErr = content.ScanGames(m.engInfo.GamesDir)
+			if !m.gameActionInProgress {
+				m.games, m.gamesErr = content.ScanGames(m.engInfo.GamesDir)
+			}
 			m.screen = screenGames
 		case 2:
 			m.texturepacks, m.texturepacksErr = content.ScanTextures(m.engInfo.TexturesDir)

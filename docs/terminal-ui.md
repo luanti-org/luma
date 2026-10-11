@@ -62,8 +62,28 @@ With `<None>`, only the mods folder is considered. The choice lasts until luma i
 
 Mods with no author in their `mod.conf` (or `modpack.conf`) can't be matched to a ContentDB package, so they are never available for update.
 
-## Games and texture packs
+## Games
 
-These screens list what is installed, and selecting an entry shows its details.
+The games screen lists the installed games. Above the list are two actions:
 
-A `[!]` tag means the entry has no valid `game.conf` or `texture_pack.conf`, so its name is guessed from the folder name.
+* **Check for updates** asks ContentDB which installed games have a newer release
+* **Update all** updates every game found by the last check
+
+Games in the list are tagged:
+
+| tag | meaning |
+|---|---|
+| `[U]` | update available |
+| `[!]` | no valid `game.conf`, title guessed from the folder name |
+
+Press `u` on a game tagged `[U]` to update only that one. Updating replaces the game's folder with the new release, without asking for confirmation.
+
+Games with no author or release in their `game.conf` can't be matched to a ContentDB package, so they are never available for update. The exception is a Minetest Game without a release, as bundled with engines up to 5.8, unless it is a git checkout.
+
+Only one check or update runs at a time, across mods and games.
+
+## Texture packs
+
+This screen lists what is installed, and selecting an entry shows its details.
+
+A `[!]` tag means the entry has no valid `texture_pack.conf`, so its name is guessed from the folder name.
