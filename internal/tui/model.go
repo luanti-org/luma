@@ -46,6 +46,7 @@ type model struct {
 	cursor  int
 	choices []string
 	engInfo engine.Info
+	engWarn error // caveat from engine detection, nil if none
 	cdb     *contentdb.Client
 	width   int
 	height  int
@@ -117,7 +118,8 @@ type model struct {
 }
 
 // New returns the initial TUI model, ready to pass to tea.NewProgram.
-func New(engInfo engine.Info) model {
+// engWarn is the warning from engine detection, shown on the main menu.
+func New(engInfo engine.Info, engWarn error) model {
 	cdb := contentdb.New("")
 	cdb.HTTPClient = &http.Client{Timeout: cdbRequestTimeout} // don't share/mutate http.DefaultClient
 	cdb.UserAgent = version.UserAgent(engInfo.Version)
@@ -127,6 +129,7 @@ func New(engInfo engine.Info) model {
 		cursor:  0,
 		choices: []string{"Manage mods", "Manage games", "Manage texture packs", "Quit"},
 		engInfo: engInfo,
+		engWarn: engWarn,
 		cdb:     cdb,
 		width:   defaultWidth,
 		height:  defaultHeight,
