@@ -67,7 +67,7 @@ func main() {
 		os.Exit(cli.Run(pflag.Args(), engineInfo, os.Stdout, os.Stderr))
 	}
 
-	p := tea.NewProgram(tui.New(engineInfo), tea.WithAltScreen())
+	p := tea.NewProgram(tui.New(engineInfo, warn), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Println("error running program:", err)
 		os.Exit(1)

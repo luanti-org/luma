@@ -66,6 +66,9 @@ func (m model) viewMenu() string {
 	s += fmt.Sprintf("games dir: %s\n", m.engInfo.GamesDir)
 	s += fmt.Sprintf("textures dir: %s\n", m.engInfo.TexturesDir)
 	s += fmt.Sprintf("engine:    %s\n", formatEngineInfo(m.engInfo))
+	if m.engWarn != nil {
+		s += wrapLabeled("warning:   ", []string{m.engWarn.Error()}, m.width)
+	}
 	s += "\n(up/down to move, enter to select, q to quit)\n"
 
 	return s
