@@ -73,6 +73,14 @@ var commands = map[string]noun{
 			"update":   {"[-n] [-y] [-x a,b] [--no-deps] [--game id] [name...]", "update the named mods, or all outdated mods if none are named, with any new dependencies", modsUpdate},
 		},
 	},
+	"texturepacks": {
+		summary: "manage installed texture packs",
+		verbs: map[string]verb{
+			"list":     {"[--names]", "list installed texture packs", texturepacksList},
+			"outdated": {"[--names]", "list texture packs with a newer release on ContentDB", texturepacksOutdated},
+			"update":   {"[-n] [-x a,b] [name...]", "update the named texture packs, or all outdated texture packs if none are named", texturepacksUpdate},
+		},
+	},
 }
 
 // Noun is a top-level command group, as listed in help

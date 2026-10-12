@@ -136,3 +136,49 @@ Naming a game that is not installed, as an argument or in `--exclude`, is an err
 Named games with no update, or with no author or release in their `game.conf`, are reported and skipped.
 
 If an update fails, the rest still go ahead, and luma exits with code 1 after reporting how many failed.
+
+## texturepacks
+
+Texture packs are named by the `name` in their `texture_pack.conf`, or by their folder name if there is none. The `base` folder in the textures folder holds the engine's own textures and is never listed.
+
+### texturepacks list
+
+Lists the installed texture packs with their author, release number and title. `-` stands for a value the texture pack doesn't declare.
+
+    luma texturepacks list
+    luma texturepacks list --names
+
+`--names` prints only the names, one per line.
+
+### texturepacks outdated
+
+Lists the texture packs that have a newer release on ContentDB, with their current and latest release numbers.
+
+    luma texturepacks outdated
+    luma texturepacks outdated --names
+
+Takes `--names` too.
+
+Only texture packs installed from ContentDB are checked, which means those with both an `author` and a `release` in their `texture_pack.conf`.
+
+### texturepacks update
+
+Updates the named texture packs, or all outdated texture packs if none are named. Updating replaces the texture pack's folder with the new release, so changes made inside that folder are lost.
+
+    luma texturepacks update                   # update all outdated texture packs
+    luma texturepacks update soothing32        # update only soothing32
+    luma texturepacks update -x soothing32     # update all except soothing32
+    luma texturepacks update -n                # show what would be updated
+
+| flag | meaning |
+|---|---|
+| `-n`, `--dry-run` | show what would be updated without changing anything |
+| `-x`, `--exclude` | comma-separated texture pack names to skip |
+
+Texture packs have no dependencies to install, so there is nothing to confirm.
+
+Naming a texture pack that is not installed, as an argument or in `--exclude`, is an error, and nothing is updated.
+
+Named texture packs with no update, or with no author or release in their `texture_pack.conf`, are reported and skipped.
+
+If an update fails, the rest still go ahead, and luma exits with code 1 after reporting how many failed.

@@ -34,7 +34,8 @@ func ScanTextures(dir string) ([]Texturepack, error) {
 	var texturepacks []Texturepack
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		// "base" holds the engine's own textures, the client skips it too
+		if !entry.IsDir() || entry.Name() == "base" {
 			continue
 		}
 
