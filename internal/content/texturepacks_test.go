@@ -15,6 +15,9 @@ func TestScanTextures(t *testing.T) {
 	// no texture_pack.conf at all
 	writeFile(t, filepath.Join(dir, "bare_texturepack", "override.txt"), "# nothing")
 
+	// the engine's own textures, not a texture pack
+	writeFile(t, filepath.Join(dir, "base", "pack", "logo.png"), "")
+
 	texturepacks, err := ScanTextures(dir)
 	if err != nil {
 		t.Fatal(err)
