@@ -141,6 +141,8 @@ If an update fails, the rest still go ahead, and luma exits with code 1 after re
 
 Texture packs are named by the `name` in their `texture_pack.conf`, or by their folder name if there is none. The `base` folder in the textures folder holds the engine's own textures and is never listed.
 
+`textures` is accepted as a shorter name for `texturepacks`, so `luma textures list` works too.
+
 ### texturepacks list
 
 Lists the installed texture packs with their author, release number and title. `-` stands for a value the texture pack doesn't declare.

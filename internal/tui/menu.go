@@ -40,8 +40,10 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.screen = screenGames
 		case 2:
-			m.texturepacks, m.texturepacksErr = content.ScanTextures(m.engInfo.TexturesDir)
-			m.texturepacksCursor = min(m.texturepacksCursor, max(len(m.texturepacks)-1, 0))
+			if !m.texturepackActionInProgress {
+				m.texturepacks, m.texturepacksErr = content.ScanTextures(m.engInfo.TexturesDir)
+				m.texturepacksCursor = min(m.texturepacksCursor, max(texturepacksRowCount+len(m.texturepacks)-1, 0))
+			}
 			m.screen = screenTexturepacks
 		case 3:
 			return m, tea.Quit

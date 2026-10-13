@@ -82,10 +82,22 @@ Press `u` on a game tagged `[U]` to update only that one. Updating replaces the 
 
 Games with no author or release in their `game.conf` can't be matched to a ContentDB package, so they are never available for update. The exception is a Minetest Game without a release, as bundled with engines up to 5.8, unless it is a git checkout.
 
-Only one check or update runs at a time, across mods and games.
+Only one check or update runs at a time, across mods, games and texture packs.
 
 ## Texture packs
 
-This screen lists what is installed, and selecting an entry shows its details.
+The texture packs screen lists the installed texture packs. Above the list are two actions:
 
-A `[!]` tag means the entry has no valid `texture_pack.conf`, so its name is guessed from the folder name.
+* **Check for updates** asks ContentDB which installed texture packs have a newer release
+* **Update all** updates every texture pack found by the last check
+
+Texture packs in the list are tagged:
+
+| tag | meaning |
+|---|---|
+| `[U]` | update available |
+| `[!]` | no valid `texture_pack.conf`, name guessed from the folder name |
+
+Press `u` on a texture pack tagged `[U]` to update only that one. Updating replaces the texture pack's folder with the new release, without asking for confirmation.
+
+Texture packs with no author or release in their `texture_pack.conf` can't be matched to a ContentDB package, so they are never available for update.

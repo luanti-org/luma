@@ -114,6 +114,19 @@ type model struct {
 	texturepacksErr    error
 	texturepacksCursor int
 
+	// texturepackActionInProgress is the texture packs counterpart of modActionInProgress
+	texturepackActionInProgress bool
+
+	texturepacksChecking    bool
+	texturepacksLastChecked time.Time
+	texturepacksUpdateErr   error
+	texturepackUpdates      []update.TexturepackUpdate
+
+	texturepacksUpdating     bool
+	texturepackUpdateQueue   []update.TexturepackUpdate // what the current/last run updates
+	texturepackUpdateIdx     int                        // count of texture packs completed so far, into texturepackUpdateQueue
+	texturepackUpdateResults []texturepackUpdateResult
+
 	selectedTexturepack content.Texturepack
 }
 
@@ -181,6 +194,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleGameUpdateStep(stepMsg)
 	}
 
+	if checkedMsg, ok := msg.(texturepackUpdatesCheckedMsg); ok {
+		m.texturepackActionInProgress = false
+		m.texturepacksChecking = false
+		m.texturepacksUpdateErr = checkedMsg.err
+		if checkedMsg.err == nil {
+			m.texturepacksLastChecked = time.Now()
+			m.texturepackUpdates = checkedMsg.updates
+		}
+		return m, nil
+	}
+
+	if stepMsg, ok := msg.(texturepackUpdateStepMsg); ok {
+		return m.handleTexturepackUpdateStep(stepMsg)
+	}
+
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -245,9 +273,9 @@ func (m model) View() string {
 	}
 }
 
-// busy reports whether a mod or game check/update is running, only one runs at a time
+// busy reports whether a mod, game or texture pack check/update is running, only one runs at a time
 func (m model) busy() bool {
-	return m.modActionInProgress || m.gameActionInProgress
+	return m.modActionInProgress || m.gameActionInProgress || m.texturepackActionInProgress
 }
 
 // listRows is how many list rows fit once chrome lines are reserved

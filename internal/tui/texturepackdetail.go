@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/luanti-org/luma/internal/util"
 )
 
 func (m model) updateTexturepackDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -33,8 +35,16 @@ func (m model) viewTexturepackDetail() string {
 		s += fmt.Sprintf("description: %s\n", texturepack.Description)
 	}
 
+	if texturepack.Release > 0 {
+		s += fmt.Sprintf("release:     %d\n", texturepack.Release)
+	}
+
 	s += fmt.Sprintf("folder:      %s\n", texturepack.Dir)
 	s += fmt.Sprintf("path:        %s\n", texturepack.Path)
+
+	if m.texturepackHasUpdate(texturepack) {
+		s += "\n" + util.UpdateTagStyle.Render("Update available") + "\n"
+	}
 
 	s += "\n(esc/backspace to go back, q to quit)\n"
 

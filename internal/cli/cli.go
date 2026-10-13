@@ -83,6 +83,11 @@ var commands = map[string]noun{
 	},
 }
 
+// aliases maps alternative noun names to their entry in commands, help lists only the latter
+var aliases = map[string]string{
+	"textures": "texturepacks",
+}
+
 // Noun is a top-level command group, as listed in help
 type Noun struct {
 	Name    string
@@ -115,6 +120,10 @@ func (c *ctx) run(args []string) int {
 	}
 
 	nounName := args[0]
+	if canonical, ok := aliases[nounName]; ok {
+		nounName = canonical
+	}
+
 	n, ok := commands[nounName]
 	if !ok {
 		return c.usageErr("unknown command %q", nounName)
