@@ -8,11 +8,13 @@ import (
 	"io/fs"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/luanti-org/luma/internal/content"
+	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/update"
 )
 
@@ -131,13 +133,9 @@ func modsUpdate(c *ctx, args []string) int {
 		return c.err("not installed: %s", strings.Join(dedupe(unknown), ", "))
 	}
 
-	provided := content.ProvidedModNames(mods)
-	if *gameID != "" {
-		gameMods, ok := c.scanGameMods(*gameID)
-		if !ok {
-			return exitError
-		}
-		maps.Copy(provided, content.ProvidedModNames(gameMods))
+	provided, ok := c.providedModNames(mods, *gameID)
+	if !ok {
+		return exitError
 	}
 
 	updates, err := update.CheckAllModUpdates(mods, c.cdb, c.eng)
@@ -164,16 +162,7 @@ func modsUpdate(c *ctx, args []string) int {
 		return exitOK
 	}
 
-	for _, m := range deps.NotFound {
-		switch {
-		case !m.Excluded:
-			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s\n", m.Dep, m.RequiredBy)
-		case m.Package != "":
-			fmt.Fprintf(c.stderr, "luma: skipping excluded dependency %s (%s) for %s\n", m.Dep, m.Package, m.RequiredBy)
-		default:
-			fmt.Fprintf(c.stderr, "luma: skipping excluded dependency %s for %s\n", m.Dep, m.RequiredBy)
-		}
-	}
+	c.printNotFound(deps.NotFound)
 
 	if *dryRun {
 		fmt.Fprintln(c.stdout, "Would update:")
@@ -195,16 +184,7 @@ func modsUpdate(c *ctx, args []string) int {
 	}
 
 	// dependencies go first, an updated mod missing one would not load
-	depsFailed := 0
-	for _, d := range deps.Install {
-		id := d.Package.Author + "/" + d.Package.Name
-		if err := update.InstallDep(c.cdb, c.eng.ModsDir, d); err != nil {
-			depsFailed++
-			fmt.Fprintf(c.stderr, "luma: %s: install failed: %v\n", id, err)
-			continue
-		}
-		fmt.Fprintf(c.stdout, "%s: installed %d (dependency of %s)\n", id, d.Package.Release, d.RequiredBy)
-	}
+	depsFailed := c.installDeps(deps.Install)
 
 	failed := 0
 	for _, u := range plan {
@@ -229,11 +209,256 @@ func modsUpdate(c *ctx, args []string) int {
 	return exitOK
 }
 
-// resolveDeps plans the new dependencies of the mods in plan.
-func (c *ctx) resolveDeps(plan []update.ModUpdate, provided map[string]bool, excluded []string) (update.DepPlan, error) {
+func modsListOptional(c *ctx, args []string) int {
+	fs := c.newFlagSet()
+	namesOnly := fs.Bool("names", false, "print only the optional dependencies that can be installed, one per line")
+	gameID := fs.String("game", "", "count this game's mods as installed")
+	if code, done := c.parseFlagsWithArgs(fs, args); done {
+		return code
+	}
+	if fs.NArg() != 1 {
+		return c.usageErr("%s: expected one mod name", fs.Name())
+	}
+
+	name := fs.Arg(0)
+	opts, _, _, ok := c.optionalDeps(name, *gameID)
+	if !ok {
+		return exitError
+	}
+
+	if *namesOnly {
+		for _, o := range opts {
+			if o.Available && !o.Installed {
+				fmt.Fprintln(c.stdout, o.Dep)
+			}
+		}
+		return exitOK
+	}
+
+	if len(opts) == 0 {
+		fmt.Fprintf(c.stdout, "%s has no optional dependencies.\n", name)
+		return exitOK
+	}
+
+	tw := tabwriter.NewWriter(c.stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "DEP\tSTATUS\tPACKAGE\tRELEASE")
+
+	for _, o := range opts {
+		switch {
+		case o.Installed:
+			fmt.Fprintf(tw, "%s\tinstalled\t-\t-\n", o.Dep)
+		case o.Available:
+			fmt.Fprintf(tw, "%s\tavailable\t%s/%s\t%d\n", o.Dep, o.Package.Author, o.Package.Name, o.Package.Release)
+		case o.GameOnly:
+			fmt.Fprintf(tw, "%s\tfrom game\t-\t-\n", o.Dep)
+		default:
+			fmt.Fprintf(tw, "%s\tnot found\t-\t-\n", o.Dep)
+		}
+	}
+
+	tw.Flush()
+
+	return exitOK
+}
+
+func modsInstallOptional(c *ctx, args []string) int {
+	fs := c.newFlagSet()
+	dryRun := fs.BoolP("dry-run", "n", false, "show what would be installed without changing anything")
+	yes := fs.BoolP("yes", "y", false, "install without asking")
+	gameID := fs.String("game", "", "count this game's mods as installed")
+	if code, done := c.parseFlagsWithArgs(fs, args); done {
+		return code
+	}
+	if fs.NArg() == 0 {
+		return c.usageErr("%s: expected a mod name", fs.Name())
+	}
+
+	name, deps := fs.Arg(0), dedupe(fs.Args()[1:])
+	opts, provided, index, ok := c.optionalDeps(name, *gameID)
+	if !ok {
+		return exitError
+	}
+
+	picks, ok := pickOptional(c, name, opts, deps)
+	if !ok {
+		return exitError
+	}
+	if len(picks) == 0 {
+		fmt.Fprintln(c.stdout, "Nothing to install.")
+		return exitOK
+	}
+
+	plan, err := update.PlanOptionalDeps(c.cdb, picks, provided, index, nil)
+	if err != nil {
+		return c.err("%v", err)
+	}
+
+	c.printNotFound(plan.NotFound)
+
+	if *dryRun {
+		fmt.Fprintln(c.stdout, "Would install:")
+		printDepInstalls(c.stdout, plan.Install)
+		return exitOK
+	}
+
+	if !*yes {
+		if !c.interactive {
+			return c.err("would install %s, rerun with -y", depNames(plan.Install))
+		}
+		fmt.Fprintln(c.stderr, "Will install:")
+		printDepInstalls(c.stderr, plan.Install)
+		if !c.askContinue() {
+			return c.err("aborted, nothing was changed")
+		}
+	}
+
+	if failed := c.installDeps(plan.Install); failed > 0 {
+		return c.err("%d of %d installs failed", failed, len(plan.Install))
+	}
+
+	return exitOK
+}
+
+// pickOptional picks the opts named in deps, or all installable ones when deps is empty.
+// Names that aren't optional dependencies of mod are an error, ok is false then.
+func pickOptional(c *ctx, mod string, opts []update.OptionalDep, deps []string) (picks []update.OptionalDep, ok bool) {
+	if len(deps) == 0 {
+		for _, o := range opts {
+			if o.Available && !o.Installed {
+				picks = append(picks, o)
+			}
+		}
+		return picks, true
+	}
+
+	byDep := make(map[string]update.OptionalDep, len(opts))
+	for _, o := range opts {
+		byDep[o.Dep] = o
+	}
+
+	var unknown []string
+	for _, d := range deps {
+		if _, ok := byDep[d]; !ok {
+			unknown = append(unknown, d)
+		}
+	}
+	if len(unknown) > 0 {
+		c.err("not optional dependencies of %s: %s", mod, strings.Join(unknown, ", "))
+		return nil, false
+	}
+
+	for _, d := range deps {
+		switch o := byDep[d]; {
+		case o.Installed:
+			fmt.Fprintf(c.stdout, "%s: already installed\n", d)
+		case o.GameOnly:
+			fmt.Fprintf(c.stdout, "%s: only provided by games, see --game\n", d)
+		case !o.Available:
+			fmt.Fprintf(c.stdout, "%s: no compatible package on ContentDB\n", d)
+		default:
+			picks = append(picks, o)
+		}
+	}
+
+	return picks, true
+}
+
+// optionalDeps lists the optional dependencies of the installed mod name, with the provided names and package index
+// used to find them. It reports any error itself, ok is false on failure.
+func (c *ctx) optionalDeps(name, gameID string) (opts []update.OptionalDep, provided map[string]bool,
+	index map[string]contentdb.Package, ok bool) {
+	mods, ok := c.scanMods()
+	if !ok {
+		return nil, nil, nil, false
+	}
+
+	i := slices.IndexFunc(mods, func(m content.Mod) bool { return m.Name == name })
+	if i < 0 {
+		c.err("not installed: %s", name)
+		return nil, nil, nil, false
+	}
+	m := mods[i]
+	if m.Author == "" {
+		c.err("%s: can't look up dependencies, no author in %s", name, confName(m))
+		return nil, nil, nil, false
+	}
+
+	provided, ok = c.providedModNames(mods, gameID)
+	if !ok {
+		return nil, nil, nil, false
+	}
+
+	index, err := c.packageIndex()
+	if err != nil {
+		c.err("%v", err)
+		return nil, nil, nil, false
+	}
+
+	opts, err = update.ListOptionalDeps(c.cdb, m.Author+"/"+m.Name, provided, index)
+	if err != nil {
+		c.err("%v", err)
+		return nil, nil, nil, false
+	}
+
+	return opts, provided, index, true
+}
+
+// installDeps installs each of installs, reporting the outcome of each, and returns how many failed.
+func (c *ctx) installDeps(installs []update.DepInstall) (failed int) {
+	for _, d := range installs {
+		id := d.Package.Author + "/" + d.Package.Name
+		if err := update.InstallDep(c.cdb, c.eng.ModsDir, d); err != nil {
+			failed++
+			fmt.Fprintf(c.stderr, "luma: %s: install failed: %v\n", id, err)
+			continue
+		}
+		fmt.Fprintf(c.stdout, "%s: installed %d (dependency of %s)\n", id, d.Package.Release, d.RequiredBy)
+	}
+	return failed
+}
+
+func (c *ctx) printNotFound(missing []update.MissingDep) {
+	for _, m := range missing {
+		switch {
+		case !m.Excluded:
+			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s\n", m.Dep, m.RequiredBy)
+		case m.Package != "":
+			fmt.Fprintf(c.stderr, "luma: skipping excluded dependency %s (%s) for %s\n", m.Dep, m.Package, m.RequiredBy)
+		default:
+			fmt.Fprintf(c.stderr, "luma: skipping excluded dependency %s for %s\n", m.Dep, m.RequiredBy)
+		}
+	}
+}
+
+// providedModNames returns the mod names mods provide, plus those of game gameID if set. ok is false on failure.
+func (c *ctx) providedModNames(mods []content.Mod, gameID string) (provided map[string]bool, ok bool) {
+	provided = content.ProvidedModNames(mods)
+	if gameID == "" {
+		return provided, true
+	}
+
+	gameMods, ok := c.scanGameMods(gameID)
+	if !ok {
+		return nil, false
+	}
+	maps.Copy(provided, content.ProvidedModNames(gameMods))
+
+	return provided, true
+}
+
+func (c *ctx) packageIndex() (map[string]contentdb.Package, error) {
 	index, err := update.FetchPackageIndex(c.cdb, c.eng)
 	if err != nil {
-		return update.DepPlan{}, fmt.Errorf("fetching package list: %w", err)
+		return nil, fmt.Errorf("fetching package list: %w", err)
+	}
+	return index, nil
+}
+
+// resolveDeps plans the new dependencies of the mods in plan.
+func (c *ctx) resolveDeps(plan []update.ModUpdate, provided map[string]bool, excluded []string) (update.DepPlan, error) {
+	index, err := c.packageIndex()
+	if err != nil {
+		return update.DepPlan{}, err
 	}
 
 	skip := make(map[string]bool, len(excluded))
@@ -336,12 +561,14 @@ func noUpdateReason(m content.Mod) string {
 	if m.Author != "" {
 		return "no update available"
 	}
+	return "can't check for updates, no author in " + confName(m)
+}
 
-	conf := "mod.conf"
+func confName(m content.Mod) string {
 	if m.IsModpack {
-		conf = "modpack.conf"
+		return "modpack.conf"
 	}
-	return "can't check for updates, no author in " + conf
+	return "mod.conf"
 }
 
 // confirmDeps shows the plan on stderr and asks whether to go ahead, defaulting to no.
@@ -350,6 +577,12 @@ func (c *ctx) confirmDeps(plan []update.ModUpdate, installs []update.DepInstall)
 	printUpdates(c.stderr, plan)
 	fmt.Fprintln(c.stderr, "\nWill also install as dependencies:")
 	printDepInstalls(c.stderr, installs)
+
+	return c.askContinue()
+}
+
+// askContinue asks on stderr whether to go ahead, defaulting to no.
+func (c *ctx) askContinue() bool {
 	fmt.Fprint(c.stderr, "\nContinue? [y/N] ")
 
 	answer, _ := bufio.NewReader(c.stdin).ReadString('\n')

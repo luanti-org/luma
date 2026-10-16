@@ -278,6 +278,95 @@ func TestResolveModDepsUsesUpdatesAsRoots(t *testing.T) {
 	}
 }
 
+func TestListOptionalDeps(t *testing.T) {
+	client, requested := newDepsServer(t, map[string]string{
+		"jane/root": `{
+			"Jane/Root": [
+				{"name": "lib", "is_optional": false, "packages": ["amy/lib"]},
+				{"name": "extra", "is_optional": true, "packages": ["gm/somegame", "fred/extrafork", "amy/extra"]},
+				{"name": "have", "is_optional": true, "packages": ["amy/have"]},
+				{"name": "gameonly", "is_optional": true, "packages": ["gm/somegame"]},
+				{"name": "forked", "is_optional": true, "packages": ["fred/extrafork"]},
+				{"name": "nowhere", "is_optional": true, "packages": []}
+			],
+			"amy/lib": [{"name": "deep", "is_optional": true, "packages": ["amy/deep"]}]
+		}`,
+	})
+
+	packages := index(
+		contentdb.Package{Author: "gm", Name: "somegame", Type: "game", Release: 1},
+		mod("fred", "extrafork", 2), mod("amy", "extra", 3), mod("amy", "have", 4), mod("amy", "deep", 5),
+	)
+
+	got, err := ListOptionalDeps(client, "jane/root", map[string]bool{"have": true}, packages)
+	if err != nil {
+		t.Fatalf("ListOptionalDeps: %v", err)
+	}
+
+	want := []OptionalDep{
+		{Dep: "extra", RequiredBy: "jane/root", Available: true, Package: mod("amy", "extra", 3)},
+		{Dep: "have", RequiredBy: "jane/root", Installed: true, Available: true, Package: mod("amy", "have", 4)},
+		{Dep: "gameonly", RequiredBy: "jane/root", GameOnly: true},
+		{Dep: "forked", RequiredBy: "jane/root", Available: true, Package: mod("fred", "extrafork", 2)},
+		{Dep: "nowhere", RequiredBy: "jane/root"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("optional deps = %+v, want %+v", got, want)
+	}
+	if len(*requested) != 1 {
+		t.Errorf("requested = %v, want only the package itself", *requested)
+	}
+
+	if _, err := ListOptionalDeps(client, "noslash", nil, nil); err == nil {
+		t.Error("expected an error for an id without an author")
+	}
+	if _, err := ListOptionalDeps(client, "jane/unknown", nil, nil); err == nil {
+		t.Error("expected an error when the dependencies request fails")
+	}
+}
+
+func TestPlanOptionalDeps(t *testing.T) {
+	client, _ := newDepsServer(t, map[string]string{
+		"amy/extra": `{"amy/extra": [
+			{"name": "base", "is_optional": false, "packages": ["zed/base"]},
+			{"name": "pack", "is_optional": false, "packages": ["amy/pack"]},
+			{"name": "deep", "is_optional": true, "packages": ["amy/deep"]},
+			{"name": "gone", "is_optional": false, "packages": []}
+		]}`,
+		"amy/pack": `{"amy/pack": []}`,
+		"zed/base": `{"zed/base": []}`,
+	})
+
+	packages := index(mod("amy", "extra", 3), mod("amy", "pack", 4), mod("zed", "base", 5), mod("amy", "deep", 6))
+
+	picks := []OptionalDep{
+		{Dep: "extra", RequiredBy: "jane/root", Available: true, Package: mod("amy", "extra", 3)},
+		{Dep: "pack", RequiredBy: "jane/root", Available: true, Package: mod("amy", "pack", 4)},
+		{Dep: "pack_part", RequiredBy: "jane/root", Available: true, Package: mod("amy", "pack", 4)},
+		{Dep: "have", RequiredBy: "jane/root", Installed: true, Available: true, Package: mod("amy", "have", 7)},
+		{Dep: "gameonly", RequiredBy: "jane/root"},
+	}
+
+	plan, err := PlanOptionalDeps(client, picks, map[string]bool{"have": true}, packages, nil)
+	if err != nil {
+		t.Fatalf("PlanOptionalDeps: %v", err)
+	}
+
+	if got, want := installIDs(plan), []string{"amy/extra", "amy/pack", "zed/base"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("install = %v, want %v", got, want)
+	}
+	if extra := plan.Install[0]; extra.Dep != "extra" || extra.RequiredBy != "jane/root" {
+		t.Errorf("install[0] = %+v, want extra required by jane/root", extra)
+	}
+	if base := plan.Install[2]; base.Dep != "base" || base.RequiredBy != "amy/extra" {
+		t.Errorf("install[2] = %+v, want base required by amy/extra", base)
+	}
+
+	if want := []MissingDep{{Dep: "gone", RequiredBy: "amy/extra"}}; !reflect.DeepEqual(plan.NotFound, want) {
+		t.Errorf("not found = %+v, want %+v", plan.NotFound, want)
+	}
+}
+
 func TestInstallDep(t *testing.T) {
 	zipData := buildZip(t, "amy-lib-abc123", map[string]string{"mod.conf": "name = lib\n", "init.lua": "-- hi\n"})
 
