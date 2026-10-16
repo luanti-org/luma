@@ -32,6 +32,16 @@ type DepPlan struct {
 	NotFound []MissingDep
 }
 
+// OptionalDep is an optional dependency of RequiredBy and the package that would provide it.
+type OptionalDep struct {
+	Dep        string
+	RequiredBy string // "author/name"
+	Installed  bool
+	Available  bool // Package is set
+	GameOnly   bool // no Package, but a game provides it
+	Package    contentdb.Package
+}
+
 // FetchPackageIndex fetches every package compatible with engineInfo, keyed for ResolveDeps.
 func FetchPackageIndex(client *contentdb.Client, engineInfo engine.Info) (map[string]contentdb.Package, error) {
 	packages, err := client.Search(contentdb.SearchOptions{
@@ -86,6 +96,81 @@ func ResolveModDeps(client *contentdb.Client, updates []ModUpdate, installed map
 	}
 
 	return ResolveDeps(client, roots, installed, packages, excluded)
+}
+
+// ListOptionalDeps lists the optional dependencies of the "author/name" package id, in ContentDB order.
+// installed holds mod names on disk, packages is the index from FetchPackageIndex.
+func ListOptionalDeps(client *contentdb.Client, id string, installed map[string]bool,
+	packages map[string]contentdb.Package) ([]OptionalDep, error) {
+	author, name, ok := strings.Cut(id, "/")
+	if !ok {
+		return nil, fmt.Errorf("invalid package id %q", id)
+	}
+
+	resp, err := client.Dependencies(author, name, false)
+	if err != nil {
+		return nil, fmt.Errorf("fetching dependencies of %s: %w", id, err)
+	}
+
+	r := &depResolver{packages: packages}
+	var out []OptionalDep
+
+	for respID, deps := range resp {
+		if packageKey(respID) != packageKey(id) {
+			continue
+		}
+
+		for _, dep := range deps {
+			if !dep.IsOptional {
+				continue
+			}
+
+			o := OptionalDep{Dep: dep.Name, RequiredBy: id, Installed: installed[dep.Name]}
+			o.Package, o.Available = r.candidate(dep, true)
+			o.GameOnly = !o.Available && providedByGame(dep, packages)
+			out = append(out, o)
+		}
+	}
+
+	return out, nil
+}
+
+func providedByGame(dep contentdb.Dependency, packages map[string]contentdb.Package) bool {
+	for _, id := range dep.Packages {
+		if packages[packageKey(id)].Type == "game" {
+			return true
+		}
+	}
+	return false
+}
+
+// PlanOptionalDeps plans installing picks along with their hard dependencies, see ResolveDeps.
+// Picks that are installed or have no package are left out, excluded applies only to their dependencies.
+func PlanOptionalDeps(client *contentdb.Client, picks []OptionalDep, installed map[string]bool,
+	packages map[string]contentdb.Package, excluded map[string]bool) (DepPlan, error) {
+	var installs []DepInstall
+	var roots []string
+	picked := make(map[string]bool)
+
+	for _, o := range picks {
+		id := o.Package.Author + "/" + o.Package.Name
+		// one package can provide several of the picked names
+		if o.Installed || !o.Available || picked[packageKey(id)] {
+			continue
+		}
+
+		picked[packageKey(id)] = true
+		roots = append(roots, id)
+		installs = append(installs, DepInstall{Package: o.Package, Dep: o.Dep, RequiredBy: o.RequiredBy})
+	}
+
+	plan, err := ResolveDeps(client, roots, installed, packages, excluded)
+	if err != nil {
+		return DepPlan{}, err
+	}
+
+	plan.Install = append(installs, plan.Install...)
+	return plan, nil
 }
 
 var packageNameRe = regexp.MustCompile(`^[a-z0-9_]+$`)

@@ -68,9 +68,11 @@ var commands = map[string]noun{
 	"mods": {
 		summary: "manage installed mods",
 		verbs: map[string]verb{
-			"list":     {"[--names]", "list installed mods", modsList},
-			"outdated": {"[--names]", "list mods with a newer release on ContentDB", modsOutdated},
-			"update":   {"[-n] [-y] [-x a,b] [--no-deps] [--game id] [name...]", "update the named mods, or all outdated mods if none are named, with any new dependencies", modsUpdate},
+			"install-optional": {"[-n] [-y] [--game id] name [dep...]", "install the named optional dependencies of a mod, or all available ones if none are named", modsInstallOptional},
+			"list":             {"[--names]", "list installed mods", modsList},
+			"list-optional":    {"[--names] [--game id] name", "list the optional dependencies of a mod and whether they're installed", modsListOptional},
+			"outdated":         {"[--names]", "list mods with a newer release on ContentDB", modsOutdated},
+			"update":           {"[-n] [-y] [-x a,b] [--no-deps] [--game id] [name...]", "update the named mods, or all outdated mods if none are named, with any new dependencies", modsUpdate},
 		},
 	},
 	"texturepacks": {
