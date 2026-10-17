@@ -102,9 +102,9 @@ func (m model) handleModDepsResolved(msg modDepsResolvedMsg) (tea.Model, tea.Cmd
 	return m, nil
 }
 
-// confirmRows lists the selectable rows, the checkbox only when there is something to install.
+// confirmRows lists the selectable rows, the checkbox only for updates that would install something.
 func (m model) confirmRows() []int {
-	if len(m.pendingDeps.Install) == 0 {
+	if len(m.pendingDeps.Install) == 0 || len(m.pendingUpdates) == 0 {
 		return []int{confirmRowContinue, confirmRowCancel}
 	}
 	return []int{confirmRowDeps, confirmRowContinue, confirmRowCancel}
@@ -141,6 +141,9 @@ func (m model) updateUpdateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				deps = m.pendingDeps.Install
 			}
 			m.screen = m.confirmReturn
+			if len(m.pendingUpdates) == 0 {
+				return m.beginDepsInstall(deps)
+			}
 			return m.beginModRun(m.pendingUpdates, deps)
 
 		case confirmRowCancel:
@@ -179,11 +182,16 @@ func (m model) confirmRowLabel(row int) string {
 }
 
 func (m model) viewUpdateConfirm() string {
-	noun := "mods"
-	if len(m.pendingUpdates) == 1 {
-		noun = "mod"
+	installOnly := len(m.pendingUpdates) == 0
+
+	verb, n, noun := "update", len(m.pendingUpdates), "mod"
+	if installOnly {
+		verb, n, noun = "install", len(m.pendingDeps.Install), "package"
 	}
-	s := fmt.Sprintf("update %d %s\n\n", len(m.pendingUpdates), noun)
+	if n != 1 {
+		noun += "s"
+	}
+	s := fmt.Sprintf("%s %d %s\n\n", verb, n, noun)
 
 	var body []string
 
@@ -193,7 +201,11 @@ func (m model) viewUpdateConfirm() string {
 	}
 
 	if len(m.pendingDeps.Install) > 0 {
-		body = append(body, "new dependencies:")
+		heading := "new dependencies:"
+		if installOnly {
+			heading = "to install:"
+		}
+		body = append(body, heading)
 		for _, d := range m.pendingDeps.Install {
 			body = append(body, fmt.Sprintf("  %s/%s %d (%s, needed by %s)",
 				d.Package.Author, d.Package.Name, d.Package.Release, d.Dep, d.RequiredBy))
@@ -210,13 +222,18 @@ func (m model) viewUpdateConfirm() string {
 	}
 
 	// last, so a short terminal cuts this list rather than the dependencies
-	body = append(body, "mods to update:")
+	if !installOnly {
+		body = append(body, "mods to update:")
+	}
 	for _, u := range m.pendingUpdates {
 		current := "?"
 		if u.Mod.Release > 0 {
 			current = fmt.Sprint(u.Mod.Release)
 		}
 		body = append(body, fmt.Sprintf("  %s %s -> %d", u.Mod.Name, current, u.LatestRelease))
+	}
+	if n := len(body); n > 0 && body[n-1] == "" {
+		body = body[:n-1]
 	}
 
 	rows := m.confirmRows()

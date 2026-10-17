@@ -80,7 +80,13 @@ type model struct {
 	depsLoading bool
 	depsErr     error
 	deps        []update.ModDep // required first, then optional
+	depsLocal   bool            // listed from mod.conf rather than ContentDB
 	depsCursor  int
+
+	depsPicked   map[string]bool // dependency names checked for install
+	depsPlanning bool
+	depsPlanErr  error
+	depsRunPath  string // mod whose dependencies screen started the last run, empty if it was an update run
 
 	modsGame     content.Game // game whose mods count as installed, zero value for none
 	pickerGames  []content.Game
@@ -184,6 +190,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if listedMsg, ok := msg.(modDepsListedMsg); ok {
 		return m.handleModDepsListed(listedMsg)
+	}
+
+	if plannedMsg, ok := msg.(modDepsPlannedMsg); ok {
+		return m.handleModDepsPlanned(plannedMsg)
 	}
 
 	if stepMsg, ok := msg.(modUpdateStepMsg); ok {

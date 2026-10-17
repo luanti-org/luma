@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,6 +107,14 @@ func (m model) handleModUpdateStep(msg modUpdateStepMsg) (tea.Model, tea.Cmd) {
 		if mod.Path == m.selectedMod.Path {
 			m.selectedMod = mod // the detail screen may be open on it
 		}
+		if mod.Path == m.depsMod.Path {
+			m.depsMod = mod
+		}
+	}
+
+	if m.screen == screenModDeps {
+		m.depsLoading = true
+		return m, m.listModDepsCmd(m.depsMod)
 	}
 
 	return m, nil
@@ -132,6 +141,7 @@ func (m model) startModUpdates(queue []update.ModUpdate) (tea.Model, tea.Cmd) {
 	m.modsResolving = true
 	m.modsResolveErr = nil
 	m.pendingUpdates = queue
+	m.depsRunPath = ""
 
 	return m, m.resolveModDepsCmd(queue)
 }
@@ -263,7 +273,11 @@ func (m model) updateAllLabel() string {
 		return "Resolving dependencies..."
 	}
 	if m.modsUpdating {
-		return fmt.Sprintf("Updating mods... (%d/%d)", m.modUpdateIdx, len(m.modUpdateQueue))
+		verb := "Installing"
+		if slices.ContainsFunc(m.modUpdateQueue, func(s modRunStep) bool { return !s.isDep }) {
+			verb = "Updating mods"
+		}
+		return fmt.Sprintf("%s... (%d/%d)", verb, m.modUpdateIdx, len(m.modUpdateQueue))
 	}
 
 	label := "Update all (no updates available)"
