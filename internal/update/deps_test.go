@@ -278,7 +278,7 @@ func TestResolveModDepsUsesUpdatesAsRoots(t *testing.T) {
 	}
 }
 
-func TestListOptionalDeps(t *testing.T) {
+func TestListDeps(t *testing.T) {
 	client, requested := newDepsServer(t, map[string]string{
 		"jane/root": `{
 			"Jane/Root": [
@@ -298,34 +298,50 @@ func TestListOptionalDeps(t *testing.T) {
 		mod("fred", "extrafork", 2), mod("amy", "extra", 3), mod("amy", "have", 4), mod("amy", "deep", 5),
 	)
 
-	got, err := ListOptionalDeps(client, "jane/root", map[string]bool{"have": true}, packages)
+	got, err := ListDeps(client, "jane/root", map[string]bool{"have": true}, packages)
 	if err != nil {
-		t.Fatalf("ListOptionalDeps: %v", err)
+		t.Fatalf("ListDeps: %v", err)
 	}
 
-	want := []OptionalDep{
-		{Dep: "extra", RequiredBy: "jane/root", Available: true, Package: mod("amy", "extra", 3)},
-		{Dep: "have", RequiredBy: "jane/root", Installed: true, Available: true, Package: mod("amy", "have", 4)},
-		{Dep: "gameonly", RequiredBy: "jane/root", GameOnly: true},
-		{Dep: "forked", RequiredBy: "jane/root", Available: true, Package: mod("fred", "extrafork", 2)},
-		{Dep: "nowhere", RequiredBy: "jane/root"},
+	want := []ModDep{
+		{Dep: "lib", RequiredBy: "jane/root"},
+		{Dep: "extra", RequiredBy: "jane/root", Optional: true, Available: true, Package: mod("amy", "extra", 3)},
+		{Dep: "have", RequiredBy: "jane/root", Optional: true, Installed: true, Available: true, Package: mod("amy", "have", 4)},
+		{Dep: "gameonly", RequiredBy: "jane/root", Optional: true, GameOnly: true},
+		{Dep: "forked", RequiredBy: "jane/root", Optional: true, Available: true, Package: mod("fred", "extrafork", 2)},
+		{Dep: "nowhere", RequiredBy: "jane/root", Optional: true},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("optional deps = %+v, want %+v", got, want)
+		t.Errorf("deps = %+v, want %+v", got, want)
 	}
 	if len(*requested) != 1 {
 		t.Errorf("requested = %v, want only the package itself", *requested)
 	}
 
-	if _, err := ListOptionalDeps(client, "noslash", nil, nil); err == nil {
+	if _, err := ListDeps(client, "noslash", nil, nil); err == nil {
 		t.Error("expected an error for an id without an author")
 	}
-	if _, err := ListOptionalDeps(client, "jane/unknown", nil, nil); err == nil {
+	if _, err := ListDeps(client, "jane/unknown", nil, nil); err == nil {
 		t.Error("expected an error when the dependencies request fails")
 	}
 }
 
-func TestPlanOptionalDeps(t *testing.T) {
+func TestLocalDeps(t *testing.T) {
+	m := content.Mod{Name: "solo", Depends: []string{"have", "lib"}, OptionalDepends: []string{"extra"}}
+
+	got := LocalDeps(m, map[string]bool{"have": true})
+
+	want := []ModDep{
+		{Dep: "have", RequiredBy: "solo", Installed: true},
+		{Dep: "lib", RequiredBy: "solo"},
+		{Dep: "extra", RequiredBy: "solo", Optional: true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("deps = %+v, want %+v", got, want)
+	}
+}
+
+func TestPlanDeps(t *testing.T) {
 	client, _ := newDepsServer(t, map[string]string{
 		"amy/extra": `{"amy/extra": [
 			{"name": "base", "is_optional": false, "packages": ["zed/base"]},
@@ -339,7 +355,7 @@ func TestPlanOptionalDeps(t *testing.T) {
 
 	packages := index(mod("amy", "extra", 3), mod("amy", "pack", 4), mod("zed", "base", 5), mod("amy", "deep", 6))
 
-	picks := []OptionalDep{
+	picks := []ModDep{
 		{Dep: "extra", RequiredBy: "jane/root", Available: true, Package: mod("amy", "extra", 3)},
 		{Dep: "pack", RequiredBy: "jane/root", Available: true, Package: mod("amy", "pack", 4)},
 		{Dep: "pack_part", RequiredBy: "jane/root", Available: true, Package: mod("amy", "pack", 4)},
@@ -347,9 +363,9 @@ func TestPlanOptionalDeps(t *testing.T) {
 		{Dep: "gameonly", RequiredBy: "jane/root"},
 	}
 
-	plan, err := PlanOptionalDeps(client, picks, map[string]bool{"have": true}, packages, nil)
+	plan, err := PlanDeps(client, picks, map[string]bool{"have": true}, packages, nil)
 	if err != nil {
-		t.Fatalf("PlanOptionalDeps: %v", err)
+		t.Fatalf("PlanDeps: %v", err)
 	}
 
 	if got, want := installIDs(plan), []string{"amy/extra", "amy/pack", "zed/base"}; !reflect.DeepEqual(got, want) {

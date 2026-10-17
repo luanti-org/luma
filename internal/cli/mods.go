@@ -288,7 +288,7 @@ func modsInstallOptional(c *ctx, args []string) int {
 		return exitOK
 	}
 
-	plan, err := update.PlanOptionalDeps(c.cdb, picks, provided, index, nil)
+	plan, err := update.PlanDeps(c.cdb, picks, provided, index, nil)
 	if err != nil {
 		return c.err("%v", err)
 	}
@@ -321,7 +321,7 @@ func modsInstallOptional(c *ctx, args []string) int {
 
 // pickOptional picks the opts named in deps, or all installable ones when deps is empty.
 // Names that aren't optional dependencies of mod are an error, ok is false then.
-func pickOptional(c *ctx, mod string, opts []update.OptionalDep, deps []string) (picks []update.OptionalDep, ok bool) {
+func pickOptional(c *ctx, mod string, opts []update.ModDep, deps []string) (picks []update.ModDep, ok bool) {
 	if len(deps) == 0 {
 		for _, o := range opts {
 			if o.Available && !o.Installed {
@@ -331,7 +331,7 @@ func pickOptional(c *ctx, mod string, opts []update.OptionalDep, deps []string) 
 		return picks, true
 	}
 
-	byDep := make(map[string]update.OptionalDep, len(opts))
+	byDep := make(map[string]update.ModDep, len(opts))
 	for _, o := range opts {
 		byDep[o.Dep] = o
 	}
@@ -365,7 +365,7 @@ func pickOptional(c *ctx, mod string, opts []update.OptionalDep, deps []string) 
 
 // optionalDeps lists the optional dependencies of the installed mod name, with the provided names and package index
 // used to find them. It reports any error itself, ok is false on failure.
-func (c *ctx) optionalDeps(name, gameID string) (opts []update.OptionalDep, provided map[string]bool,
+func (c *ctx) optionalDeps(name, gameID string) (opts []update.ModDep, provided map[string]bool,
 	index map[string]contentdb.Package, ok bool) {
 	mods, ok := c.scanMods()
 	if !ok {
@@ -379,7 +379,7 @@ func (c *ctx) optionalDeps(name, gameID string) (opts []update.OptionalDep, prov
 	}
 	m := mods[i]
 	if m.Author == "" {
-		c.err("%s: can't look up dependencies, no author in %s", name, confName(m))
+		c.err("%s: can't look up dependencies, no author in %s", name, m.ConfName())
 		return nil, nil, nil, false
 	}
 
@@ -394,11 +394,12 @@ func (c *ctx) optionalDeps(name, gameID string) (opts []update.OptionalDep, prov
 		return nil, nil, nil, false
 	}
 
-	opts, err = update.ListOptionalDeps(c.cdb, m.Author+"/"+m.Name, provided, index)
+	opts, err = update.ListDeps(c.cdb, m.Author+"/"+m.Name, provided, index)
 	if err != nil {
 		c.err("%v", err)
 		return nil, nil, nil, false
 	}
+	opts = slices.DeleteFunc(opts, func(o update.ModDep) bool { return !o.Optional })
 
 	return opts, provided, index, true
 }
@@ -561,14 +562,7 @@ func noUpdateReason(m content.Mod) string {
 	if m.Author != "" {
 		return "no update available"
 	}
-	return "can't check for updates, no author in " + confName(m)
-}
-
-func confName(m content.Mod) string {
-	if m.IsModpack {
-		return "modpack.conf"
-	}
-	return "mod.conf"
+	return "can't check for updates, no author in " + m.ConfName()
 }
 
 // confirmDeps shows the plan on stderr and asks whether to go ahead, defaulting to no.

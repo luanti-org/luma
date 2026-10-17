@@ -88,6 +88,47 @@ func ProvidedModNames(mods []Mod) map[string]bool {
 	return names
 }
 
+// ConfName is the name of the mod's conf file, modpack.conf for a modpack.
+func (m Mod) ConfName() string {
+	if m.IsModpack {
+		return "modpack.conf"
+	}
+	return "mod.conf"
+}
+
+// Deps returns the mod's hard and optional dependencies, combined across members for a modpack.
+// Names the mod or pack provides itself and repeats are left out, a name hard for any member is hard.
+func (m Mod) Deps() (hard, optional []string) {
+	members := m.ModpackMods
+	if !m.IsModpack {
+		members = []Mod{m}
+	}
+
+	seen := make(map[string]bool)
+	for _, member := range members {
+		seen[member.Name] = true
+	}
+
+	for _, member := range members {
+		for _, d := range member.Depends {
+			if !seen[d] {
+				seen[d] = true
+				hard = append(hard, d)
+			}
+		}
+	}
+	for _, member := range members {
+		for _, d := range member.OptionalDepends {
+			if !seen[d] {
+				seen[d] = true
+				optional = append(optional, d)
+			}
+		}
+	}
+
+	return hard, optional
+}
+
 func isModpackDir(path string) bool {
 	return util.FileExists(filepath.Join(path, "modpack.conf")) || util.FileExists(filepath.Join(path, "modpack.txt"))
 }

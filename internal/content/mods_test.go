@@ -3,6 +3,7 @@ package content
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -182,5 +183,32 @@ func TestProvidedModNames(t *testing.T) {
 		if !got[n] {
 			t.Errorf("expected %q in %v", n, got)
 		}
+	}
+}
+
+func TestModDeps(t *testing.T) {
+	single := Mod{Name: "solo", Depends: []string{"a", "b", "a"}, OptionalDepends: []string{"b", "c", "solo"}}
+	hard, optional := single.Deps()
+	if want := []string{"a", "b"}; !reflect.DeepEqual(hard, want) {
+		t.Errorf("single hard = %v, want %v", hard, want)
+	}
+	if want := []string{"c"}; !reflect.DeepEqual(optional, want) {
+		t.Errorf("single optional = %v, want %v", optional, want)
+	}
+
+	pack := Mod{Name: "pack", IsModpack: true, Depends: []string{"ignored"}, ModpackMods: []Mod{
+		{Name: "one", Depends: []string{"two", "lib"}, OptionalDepends: []string{"extra", "core"}},
+		{Name: "two", Depends: []string{"core"}, OptionalDepends: []string{"lib", "one", "extra"}},
+	}}
+	hard, optional = pack.Deps()
+	if want := []string{"lib", "core"}; !reflect.DeepEqual(hard, want) {
+		t.Errorf("pack hard = %v, want %v", hard, want)
+	}
+	if want := []string{"extra"}; !reflect.DeepEqual(optional, want) {
+		t.Errorf("pack optional = %v, want %v", optional, want)
+	}
+
+	if hard, optional := (Mod{Name: "bare"}).Deps(); hard != nil || optional != nil {
+		t.Errorf("bare = %v, %v, want none", hard, optional)
 	}
 }

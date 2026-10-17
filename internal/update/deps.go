@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
 )
@@ -32,10 +33,11 @@ type DepPlan struct {
 	NotFound []MissingDep
 }
 
-// OptionalDep is an optional dependency of RequiredBy and the package that would provide it.
-type OptionalDep struct {
+// ModDep is a dependency of RequiredBy and the package that would provide it.
+type ModDep struct {
 	Dep        string
-	RequiredBy string // "author/name"
+	RequiredBy string // "author/name", or the mod name from LocalDeps
+	Optional   bool
 	Installed  bool
 	Available  bool // Package is set
 	GameOnly   bool // no Package, but a game provides it
@@ -98,10 +100,10 @@ func ResolveModDeps(client *contentdb.Client, updates []ModUpdate, installed map
 	return ResolveDeps(client, roots, installed, packages, excluded)
 }
 
-// ListOptionalDeps lists the optional dependencies of the "author/name" package id, in ContentDB order.
+// ListDeps lists the hard and optional dependencies of the "author/name" package id, in ContentDB order.
 // installed holds mod names on disk, packages is the index from FetchPackageIndex.
-func ListOptionalDeps(client *contentdb.Client, id string, installed map[string]bool,
-	packages map[string]contentdb.Package) ([]OptionalDep, error) {
+func ListDeps(client *contentdb.Client, id string, installed map[string]bool,
+	packages map[string]contentdb.Package) ([]ModDep, error) {
 	author, name, ok := strings.Cut(id, "/")
 	if !ok {
 		return nil, fmt.Errorf("invalid package id %q", id)
@@ -113,7 +115,7 @@ func ListOptionalDeps(client *contentdb.Client, id string, installed map[string]
 	}
 
 	r := &depResolver{packages: packages}
-	var out []OptionalDep
+	var out []ModDep
 
 	for respID, deps := range resp {
 		if packageKey(respID) != packageKey(id) {
@@ -121,11 +123,7 @@ func ListOptionalDeps(client *contentdb.Client, id string, installed map[string]
 		}
 
 		for _, dep := range deps {
-			if !dep.IsOptional {
-				continue
-			}
-
-			o := OptionalDep{Dep: dep.Name, RequiredBy: id, Installed: installed[dep.Name]}
+			o := ModDep{Dep: dep.Name, RequiredBy: id, Optional: dep.IsOptional, Installed: installed[dep.Name]}
 			o.Package, o.Available = r.candidate(dep, true)
 			o.GameOnly = !o.Available && providedByGame(dep, packages)
 			out = append(out, o)
@@ -133,6 +131,22 @@ func ListOptionalDeps(client *contentdb.Client, id string, installed map[string]
 	}
 
 	return out, nil
+}
+
+// LocalDeps lists the dependencies in m's mod.conf, or its members' for a modpack, for mods ContentDB can't look up.
+// No package is looked up, so none are Available.
+func LocalDeps(m content.Mod, installed map[string]bool) []ModDep {
+	hard, optional := m.Deps()
+	var out []ModDep
+
+	for _, d := range hard {
+		out = append(out, ModDep{Dep: d, RequiredBy: m.Name, Installed: installed[d]})
+	}
+	for _, d := range optional {
+		out = append(out, ModDep{Dep: d, RequiredBy: m.Name, Optional: true, Installed: installed[d]})
+	}
+
+	return out
 }
 
 func providedByGame(dep contentdb.Dependency, packages map[string]contentdb.Package) bool {
@@ -144,9 +158,9 @@ func providedByGame(dep contentdb.Dependency, packages map[string]contentdb.Pack
 	return false
 }
 
-// PlanOptionalDeps plans installing picks along with their hard dependencies, see ResolveDeps.
+// PlanDeps plans installing picks along with their hard dependencies, see ResolveDeps.
 // Picks that are installed or have no package are left out, excluded applies only to their dependencies.
-func PlanOptionalDeps(client *contentdb.Client, picks []OptionalDep, installed map[string]bool,
+func PlanDeps(client *contentdb.Client, picks []ModDep, installed map[string]bool,
 	packages map[string]contentdb.Package, excluded map[string]bool) (DepPlan, error) {
 	var installs []DepInstall
 	var roots []string

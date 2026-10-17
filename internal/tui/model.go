@@ -27,6 +27,7 @@ const (
 	screenMods
 	screenModDetail
 	screenModpackModDetail
+	screenModDeps
 	screenGamePicker
 	screenUpdateConfirm
 	screenGames
@@ -74,6 +75,12 @@ type model struct {
 	modpackModsCursor int
 
 	selectedModpackMod content.Mod
+
+	depsMod     content.Mod // mod the dependencies screen is for
+	depsLoading bool
+	depsErr     error
+	deps        []update.ModDep // required first, then optional
+	depsCursor  int
 
 	modsGame     content.Game // game whose mods count as installed, zero value for none
 	pickerGames  []content.Game
@@ -175,6 +182,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleModDepsResolved(resolvedMsg)
 	}
 
+	if listedMsg, ok := msg.(modDepsListedMsg); ok {
+		return m.handleModDepsListed(listedMsg)
+	}
+
 	if stepMsg, ok := msg.(modUpdateStepMsg); ok {
 		return m.handleModUpdateStep(stepMsg)
 	}
@@ -231,6 +242,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateModDetail(keyMsg)
 	case screenModpackModDetail:
 		return m.updateModpackModDetail(keyMsg)
+	case screenModDeps:
+		return m.updateModDeps(keyMsg)
 	case screenGamePicker:
 		return m.updateGamePicker(keyMsg)
 	case screenUpdateConfirm:
@@ -256,6 +269,8 @@ func (m model) View() string {
 		return m.viewModDetail()
 	case screenModpackModDetail:
 		return m.viewModpackModDetail()
+	case screenModDeps:
+		return m.viewModDeps()
 	case screenGamePicker:
 		return m.viewGamePicker()
 	case screenUpdateConfirm:

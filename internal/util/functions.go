@@ -9,7 +9,7 @@ import (
 )
 
 // ParseConfFile parses a Luanti "Settings" style file:
-// one `key = value` per line
+// one `key = value` per line, or a value of `"""` up to a line that is exactly `"""`
 func ParseConfFile(data []byte) map[string]string {
 	result := make(map[string]string)
 
@@ -25,10 +25,29 @@ func ParseConfFile(data []byte) map[string]string {
 			continue
 		}
 
-		result[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		value = strings.TrimSpace(value)
+		if value == multilineMarker {
+			value = readMultiline(scanner)
+		}
+
+		result[strings.TrimSpace(key)] = value
 	}
 
 	return result
+}
+
+const multilineMarker = `"""`
+
+// readMultiline joins lines up to the closing marker, or the end, as the engine does.
+func readMultiline(scanner *bufio.Scanner) string {
+	var lines []string
+	for scanner.Scan() {
+		if scanner.Text() == multilineMarker {
+			break
+		}
+		lines = append(lines, scanner.Text())
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ParseIntField reads an integer field from a parsed conf map,

@@ -52,6 +52,31 @@ func TestParseConfFile(t *testing.T) {
 			data:     []byte("# this is a comment\nkey=value"),
 			expected: map[string]string{"key": "value"},
 		},
+		{
+			name:     "multiline value",
+			data:     []byte("a = \"\"\"\n\tx,\n\n  y = 2\n\"\"\"\nb = 1"),
+			expected: map[string]string{"a": "\tx,\n\n  y = 2", "b": "1"},
+		},
+		{
+			name:     "multiline crlf",
+			data:     []byte("a = \"\"\"\r\nx\r\n\"\"\"\r\nb = 1"),
+			expected: map[string]string{"a": "x", "b": "1"},
+		},
+		{
+			name:     "indented closing marker is part of the value",
+			data:     []byte("a = \"\"\"\nx\n  \"\"\"\n\"\"\"\nb = 1"),
+			expected: map[string]string{"a": "x\n  \"\"\"", "b": "1"},
+		},
+		{
+			name:     "marker with text after is a plain value",
+			data:     []byte("a = \"\"\"x, y\nb = 1"),
+			expected: map[string]string{"a": "\"\"\"x, y", "b": "1"},
+		},
+		{
+			name:     "unterminated multiline takes the rest",
+			data:     []byte("a = \"\"\"\nx\nb = 1"),
+			expected: map[string]string{"a": "x\nb = 1"},
+		},
 	}
 
 	for _, tt := range tests {

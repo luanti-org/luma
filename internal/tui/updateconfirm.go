@@ -12,6 +12,7 @@ import (
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
+	"github.com/luanti-org/luma/internal/engine"
 	"github.com/luanti-org/luma/internal/update"
 )
 
@@ -37,22 +38,9 @@ func (m model) resolveModDepsCmd(queue []update.ModUpdate) tea.Cmd {
 	game := m.modsGame
 
 	return func() tea.Msg {
-		mods, err := content.ScanMods(engInfo.ModsDir)
+		installed, err := installedModNames(engInfo, game)
 		if err != nil {
 			return modDepsResolvedMsg{err: err}
-		}
-		installed := content.ProvidedModNames(mods)
-
-		if game.ID != "" {
-			if _, err := os.Stat(game.Path); err != nil {
-				return modDepsResolvedMsg{err: fmt.Errorf("game not installed: %s", game.ID)}
-			}
-
-			gameMods, err := content.ScanMods(filepath.Join(game.Path, "mods"))
-			if err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return modDepsResolvedMsg{err: fmt.Errorf("scanning mods of game %s: %w", game.ID, err)}
-			}
-			maps.Copy(installed, content.ProvidedModNames(gameMods))
 		}
 
 		if index == nil {
@@ -65,6 +53,29 @@ func (m model) resolveModDepsCmd(queue []update.ModUpdate) tea.Cmd {
 		plan, err := update.ResolveModDeps(client, queue, installed, index, nil)
 		return modDepsResolvedMsg{index: index, plan: plan, err: err}
 	}
+}
+
+// installedModNames returns the mod names in the mods folder, plus those of game if set.
+func installedModNames(engInfo engine.Info, game content.Game) (map[string]bool, error) {
+	mods, err := content.ScanMods(engInfo.ModsDir)
+	if err != nil {
+		return nil, err
+	}
+	installed := content.ProvidedModNames(mods)
+
+	if game.ID != "" {
+		if _, err := os.Stat(game.Path); err != nil {
+			return nil, fmt.Errorf("game not installed: %s", game.ID)
+		}
+
+		gameMods, err := content.ScanMods(filepath.Join(game.Path, "mods"))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("scanning mods of game %s: %w", game.ID, err)
+		}
+		maps.Copy(installed, content.ProvidedModNames(gameMods))
+	}
+
+	return installed, nil
 }
 
 // handleModDepsResolved starts the run when nothing new is needed and resolving worked, else asks first.
