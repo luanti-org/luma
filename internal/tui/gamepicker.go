@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/luanti-org/luma/internal/content"
+	"github.com/luanti-org/luma/internal/util"
 )
 
 const noGameLabel = "<None>"
@@ -77,7 +78,7 @@ func (m model) viewGamePicker() string {
 	s := fmt.Sprintf("base game for mod dependencies, from %s\n\n", m.engInfo.GamesDir)
 
 	if m.pickerErr != nil {
-		s += fmt.Sprintf("error: %v\n\n", m.pickerErr)
+		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.pickerErr)) + "\n\n"
 	}
 
 	total := len(m.pickerGames) + 1

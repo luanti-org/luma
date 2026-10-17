@@ -218,23 +218,28 @@ func (m model) texturepacksUpdateAllLabel() string {
 		label = fmt.Sprintf("Update all (%d available)", len(m.texturepackUpdates))
 	}
 	if len(m.texturepackUpdateResults) > 0 {
-		failed := 0
-		for _, r := range m.texturepackUpdateResults {
-			if r.err != nil {
-				failed++
-			}
-		}
+		failed := countTexturepackUpdateErrs(m.texturepackUpdateResults)
 		label += fmt.Sprintf(" [last run: %d/%d succeeded]", len(m.texturepackUpdateResults)-failed, len(m.texturepackUpdateResults))
 	}
 
 	return label
 }
 
+func countTexturepackUpdateErrs(results []texturepackUpdateResult) int {
+	n := 0
+	for _, r := range results {
+		if r.err != nil {
+			n++
+		}
+	}
+	return n
+}
+
 func (m model) viewTexturepacks() string {
 	s := fmt.Sprintf("texture packs in %s\n\n", m.engInfo.TexturesDir)
 
 	if m.texturepacksErr != nil {
-		s += fmt.Sprintf("error: %v\n", m.texturepacksErr)
+		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.texturepacksErr)) + "\n"
 		s += "\n(backspace to go back)\n"
 		return s
 	}
@@ -244,7 +249,14 @@ func (m model) viewTexturepacks() string {
 		if m.texturepacksCursor == row {
 			cursor = ">"
 		}
-		s += truncate(fmt.Sprintf("%s %s", cursor, m.texturepacksCommandLabel(row)), m.width) + "\n"
+		line := truncate(fmt.Sprintf("%s %s", cursor, m.texturepacksCommandLabel(row)), m.width)
+		switch {
+		case row == texturepacksCmdCheckUpdates && m.texturepacksUpdateErr != nil:
+			line = util.ErrorStyle.Render(line)
+		case row == texturepacksCmdUpdateAll && countTexturepackUpdateErrs(m.texturepackUpdateResults) > 0:
+			line = styleFrom(line, "[last run:", util.WarnStyle)
+		}
+		s += line + "\n"
 	}
 	s += "\n"
 
@@ -276,6 +288,9 @@ func (m model) viewTexturepacks() string {
 		line := truncate(fmt.Sprintf("%s %s %s %s", cursor, updateTag, tag, texturepack.Name), m.width)
 		if m.texturepackHasUpdate(texturepack) {
 			line = strings.Replace(line, "[U]", util.UpdateTagStyle.Render("[U]"), 1)
+		}
+		if tag == "[!]" {
+			line = strings.Replace(line, "[!]", util.WarnStyle.Render("[!]"), 1)
 		}
 
 		s += line + "\n"

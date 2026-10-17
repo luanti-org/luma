@@ -87,7 +87,11 @@ func (m model) viewModDetail() string {
 				tag = "[!]" // missing/malformed mod.conf, name is a folder-name guess
 			}
 
-			s += truncate(fmt.Sprintf("%s %s %s%s", cursor, tag, mod.Name, subpackSuffix(m.selectedMod.Path, mod.Path)), m.width) + "\n"
+			line := truncate(fmt.Sprintf("%s %s %s%s", cursor, tag, mod.Name, subpackSuffix(m.selectedMod.Path, mod.Path)), m.width)
+			if tag == "[!]" {
+				line = strings.Replace(line, "[!]", util.WarnStyle.Render("[!]"), 1)
+			}
+			s += line + "\n"
 		}
 
 		pad := rows - (end - start)

@@ -9,11 +9,13 @@ import (
 	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
 	"github.com/luanti-org/luma/internal/update"
+	"github.com/luanti-org/luma/internal/util"
 )
 
 // Rows of the confirm screen, see confirmRows.
@@ -193,11 +195,14 @@ func (m model) viewUpdateConfirm() string {
 	}
 	s := fmt.Sprintf("%s %d %s\n\n", verb, n, noun)
 
-	var body []string
+	var body []styledLine
+	add := func(text string, style *lipgloss.Style) { body = append(body, styledLine{text, style}) }
 
 	if m.modsResolveErr != nil {
-		body = append(body, wrapText(fmt.Sprintf("could not resolve dependencies: %v", m.modsResolveErr), m.width)...)
-		body = append(body, "")
+		for _, line := range wrapText(fmt.Sprintf("could not resolve dependencies: %v", m.modsResolveErr), m.width) {
+			add(line, &util.ErrorStyle)
+		}
+		add("", nil)
 	}
 
 	if len(m.pendingDeps.Install) > 0 {
@@ -205,34 +210,34 @@ func (m model) viewUpdateConfirm() string {
 		if installOnly {
 			heading = "to install:"
 		}
-		body = append(body, heading)
+		add(heading, nil)
 		for _, d := range m.pendingDeps.Install {
-			body = append(body, fmt.Sprintf("  %s/%s %d (%s, needed by %s)",
-				d.Package.Author, d.Package.Name, d.Package.Release, d.Dep, d.RequiredBy))
+			add(fmt.Sprintf("  %s/%s %d (%s, needed by %s)",
+				d.Package.Author, d.Package.Name, d.Package.Release, d.Dep, d.RequiredBy), nil)
 		}
-		body = append(body, "")
+		add("", nil)
 	}
 
 	if len(m.pendingDeps.NotFound) > 0 {
-		body = append(body, "dependencies not found:")
+		add("dependencies not found:", nil)
 		for _, d := range m.pendingDeps.NotFound {
-			body = append(body, fmt.Sprintf("  %s (needed by %s)", d.Dep, d.RequiredBy))
+			add(fmt.Sprintf("  %s (needed by %s)", d.Dep, d.RequiredBy), &util.MutedStyle)
 		}
-		body = append(body, "")
+		add("", nil)
 	}
 
 	// last, so a short terminal cuts this list rather than the dependencies
 	if !installOnly {
-		body = append(body, "mods to update:")
+		add("mods to update:", nil)
 	}
 	for _, u := range m.pendingUpdates {
 		current := "?"
 		if u.Mod.Release > 0 {
 			current = fmt.Sprint(u.Mod.Release)
 		}
-		body = append(body, fmt.Sprintf("  %s %s -> %d", u.Mod.Name, current, u.LatestRelease))
+		add(fmt.Sprintf("  %s %s -> %d", u.Mod.Name, current, u.LatestRelease), nil)
 	}
-	if n := len(body); n > 0 && body[n-1] == "" {
+	if n := len(body); n > 0 && body[n-1].text == "" {
 		body = body[:n-1]
 	}
 
@@ -240,11 +245,11 @@ func (m model) viewUpdateConfirm() string {
 	space := m.listRows(5 + len(rows))
 	if len(body) > space {
 		hidden := len(body) - space + 1
-		body = append(body[:space-1:space-1], fmt.Sprintf("  (%d more lines)", hidden))
+		body = append(body[:space-1:space-1], styledLine{text: fmt.Sprintf("  (%d more lines)", hidden)})
 	}
 
 	for _, line := range body {
-		s += truncate(line, m.width) + "\n"
+		s += line.render(m.width) + "\n"
 	}
 	s += "\n"
 

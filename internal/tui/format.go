@@ -1,6 +1,33 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// styledLine is a line whose style goes on after it is truncated.
+type styledLine struct {
+	text  string
+	style *lipgloss.Style // nil for plain
+}
+
+func (l styledLine) render(width int) string {
+	s := truncate(l.text, width)
+	if l.style != nil {
+		s = l.style.Render(s)
+	}
+	return s
+}
+
+// styleFrom styles line from the first marker on, for use after truncation.
+func styleFrom(line, marker string, style lipgloss.Style) string {
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return line
+	}
+	return line[:i] + style.Render(line[i:])
+}
 
 // truncate cuts s to at most width runes; width <= 0 disables it.
 func truncate(s string, width int) string {

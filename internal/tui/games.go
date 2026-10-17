@@ -218,23 +218,28 @@ func (m model) gamesUpdateAllLabel() string {
 		label = fmt.Sprintf("Update all (%d available)", len(m.gameUpdates))
 	}
 	if len(m.gameUpdateResults) > 0 {
-		failed := 0
-		for _, r := range m.gameUpdateResults {
-			if r.err != nil {
-				failed++
-			}
-		}
+		failed := countGameUpdateErrs(m.gameUpdateResults)
 		label += fmt.Sprintf(" [last run: %d/%d succeeded]", len(m.gameUpdateResults)-failed, len(m.gameUpdateResults))
 	}
 
 	return label
 }
 
+func countGameUpdateErrs(results []gameUpdateResult) int {
+	n := 0
+	for _, r := range results {
+		if r.err != nil {
+			n++
+		}
+	}
+	return n
+}
+
 func (m model) viewGames() string {
 	s := fmt.Sprintf("games in %s\n\n", m.engInfo.GamesDir)
 
 	if m.gamesErr != nil {
-		s += fmt.Sprintf("error: %v\n", m.gamesErr)
+		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.gamesErr)) + "\n"
 		s += "\n(esc/backspace to go back, q to quit)\n"
 		return s
 	}
@@ -244,7 +249,14 @@ func (m model) viewGames() string {
 		if m.gamesCursor == row {
 			cursor = ">"
 		}
-		s += truncate(fmt.Sprintf("%s %s", cursor, m.gamesCommandLabel(row)), m.width) + "\n"
+		line := truncate(fmt.Sprintf("%s %s", cursor, m.gamesCommandLabel(row)), m.width)
+		switch {
+		case row == gamesCmdCheckUpdates && m.gamesUpdateErr != nil:
+			line = util.ErrorStyle.Render(line)
+		case row == gamesCmdUpdateAll && countGameUpdateErrs(m.gameUpdateResults) > 0:
+			line = styleFrom(line, "[last run:", util.WarnStyle)
+		}
+		s += line + "\n"
 	}
 	s += "\n"
 
@@ -276,6 +288,9 @@ func (m model) viewGames() string {
 		line := truncate(fmt.Sprintf("%s %s %s %s", cursor, updateTag, tag, game.Title), m.width)
 		if m.gameHasUpdate(game) {
 			line = strings.Replace(line, "[U]", util.UpdateTagStyle.Render("[U]"), 1)
+		}
+		if tag == "[!]" {
+			line = strings.Replace(line, "[!]", util.WarnStyle.Render("[!]"), 1)
 		}
 
 		s += line + "\n"

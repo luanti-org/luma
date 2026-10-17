@@ -320,7 +320,7 @@ func (m model) viewMods() string {
 	s := fmt.Sprintf("mods in %s\n\n", m.engInfo.ModsDir)
 
 	if m.modsErr != nil {
-		s += fmt.Sprintf("error: %v\n", m.modsErr)
+		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.modsErr)) + "\n"
 		s += "\n(backspace to go back)\n"
 		return s
 	}
@@ -330,7 +330,14 @@ func (m model) viewMods() string {
 		if m.modsCursor == row {
 			cursor = ">"
 		}
-		s += truncate(fmt.Sprintf("%s %s", cursor, m.modsCommandLabel(row)), m.width) + "\n"
+		line := truncate(fmt.Sprintf("%s %s", cursor, m.modsCommandLabel(row)), m.width)
+		switch {
+		case row == modsCmdCheckUpdates && m.modsUpdateErr != nil:
+			line = util.ErrorStyle.Render(line)
+		case row == modsCmdUpdateAll && countModUpdateErrs(m.modUpdateResults) > 0:
+			line = styleFrom(line, "[last run:", util.WarnStyle)
+		}
+		s += line + "\n"
 	}
 	s += "\n"
 

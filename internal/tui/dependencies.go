@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/update"
+	"github.com/luanti-org/luma/internal/util"
 )
 
 // Action rows shown below the list on the dependencies screen, see depsActions.
@@ -286,23 +288,44 @@ func (m model) depsActionLabel(action int) string {
 }
 
 // depsResultLines describes the plan error or the last run from this screen, with its failures.
-func (m model) depsResultLines() []string {
+func (m model) depsResultLines() []styledLine {
 	if m.depsPlanErr != nil {
-		return []string{fmt.Sprintf("could not resolve dependencies: %v", m.depsPlanErr)}
+		return []styledLine{{fmt.Sprintf("could not resolve dependencies: %v", m.depsPlanErr), &util.ErrorStyle}}
 	}
 	if !m.depsRunShown() || m.modsUpdating || len(m.modUpdateResults) == 0 {
 		return nil
 	}
 
 	results := m.modUpdateResults
-	lines := []string{fmt.Sprintf("last run: %d/%d installed", len(results)-countModUpdateErrs(results), len(results))}
+	failed := countModUpdateErrs(results)
+	summary := styledLine{text: fmt.Sprintf("last run: %d/%d installed", len(results)-failed, len(results))}
+	if failed > 0 {
+		summary.style = &util.WarnStyle
+	}
+
+	lines := []styledLine{summary}
 	for _, r := range results {
 		if r.err != nil {
-			lines = append(lines, fmt.Sprintf("  %s/%s: %v", r.step.dep.Package.Author, r.step.dep.Package.Name, r.err))
+			text := fmt.Sprintf("  %s/%s: %v", r.step.dep.Package.Author, r.step.dep.Package.Name, r.err)
+			lines = append(lines, styledLine{text, &util.ErrorStyle})
 		}
 	}
 
 	return lines
+}
+
+// depStatusStyle colors a status from depStatus, nil for none.
+func depStatusStyle(status string) *lipgloss.Style {
+	switch status {
+	case "available":
+		return &util.AvailableStyle
+	case "not found", "from game":
+		return &util.MutedStyle
+	case "missing":
+		return &util.ErrorStyle
+	default:
+		return nil
+	}
 }
 
 func (m model) viewModDeps() string {
@@ -332,7 +355,10 @@ func (m model) viewModDeps() string {
 
 	switch {
 	case m.depsErr != nil:
-		return s + strings.Join(wrapText(fmt.Sprintf("error: %v", m.depsErr), m.width), "\n") + "\n\n" + help
+		for _, line := range wrapText(fmt.Sprintf("error: %v", m.depsErr), m.width) {
+			s += util.ErrorStyle.Render(line) + "\n"
+		}
+		return s + "\n" + help
 	case len(m.deps) == 0:
 		return s + "(no dependencies)\n\n" + help
 	}
@@ -345,6 +371,7 @@ func (m model) viewModDeps() string {
 	}
 
 	var lines []string
+	statuses := make(map[int]string) // line index to its status, styled after truncation
 	cursorLine := 0
 	for i, d := range m.deps {
 		if i == 0 && !d.Optional {
@@ -375,24 +402,26 @@ func (m model) viewModDeps() string {
 			pkg = fmt.Sprintf("%s/%s %d", d.Package.Author, d.Package.Name, d.Package.Release)
 		}
 
-		line := fmt.Sprintf("%s %s %-*s  %-9s  %s", cursor, box, nameWidth, d.Dep, depStatus(d, local), pkg)
+		status := depStatus(d, local)
+		statuses[len(lines)] = status
+		line := fmt.Sprintf("%s %s %-*s  %-9s  %s", cursor, box, nameWidth, d.Dep, status, pkg)
 		lines = append(lines, strings.TrimRight(line, " "))
 	}
 
-	var below []string
+	var below []styledLine
 	actions := m.depsActions()
 	if !slices.Contains(actions, depsActInstall) {
-		below = append(below, "  (nothing to install from ContentDB)")
+		below = append(below, styledLine{text: "  (nothing to install from ContentDB)"})
 	}
 	for i, action := range actions {
 		cursor := " "
 		if m.depsCursor == len(m.deps)+i {
 			cursor = ">"
 		}
-		below = append(below, fmt.Sprintf("%s %s", cursor, m.depsActionLabel(action)))
+		below = append(below, styledLine{text: fmt.Sprintf("%s %s", cursor, m.depsActionLabel(action))})
 	}
 	if results := m.depsResultLines(); len(results) > 0 {
-		below = append(below, "")
+		below = append(below, styledLine{})
 		below = append(below, results...)
 	}
 
@@ -403,8 +432,14 @@ func (m model) viewModDeps() string {
 	rows := m.listRows(chrome)
 	start, end := listWindow(cursorLine, len(lines), rows)
 
-	for _, line := range lines[start:end] {
-		s += truncate(line, m.width) + "\n"
+	statusCol := nameWidth + 8 // after cursor, box and the padded name
+	for i := start; i < end; i++ {
+		line := truncate(lines[i], m.width)
+		if style := depStatusStyle(statuses[i]); style != nil && len(line) > statusCol {
+			stop := min(statusCol+len(statuses[i]), len(line))
+			line = line[:statusCol] + style.Render(line[statusCol:stop]) + line[stop:]
+		}
+		s += line + "\n"
 	}
 
 	s += strings.Repeat("\n", rows-(end-start))
@@ -414,7 +449,7 @@ func (m model) viewModDeps() string {
 	s += "\n\n"
 
 	for _, line := range below {
-		s += truncate(line, m.width) + "\n"
+		s += line.render(m.width) + "\n"
 	}
 
 	s += "\n"
