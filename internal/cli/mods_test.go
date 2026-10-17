@@ -747,14 +747,19 @@ func TestModsUpdateDryRunNeverPrompts(t *testing.T) {
 	}
 }
 
-// setupOptional is setupMods where alpha optionally depends on extra (amy/extra, which needs amy/lib),
-// have (installed) and gameonly (only a game provides it).
-func setupOptional(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
+// setupModDeps is setupMods where alpha needs lib (amy/lib) and base (only a game provides it), and optionally
+// depends on extra (amy/extra, which needs amy/lib), have (installed), gameonly (only a game) and nowhere.
+// local has no author and orphan isn't on ContentDB, both need have and gone.
+func setupModDeps(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
 	t.Helper()
 
 	eng, f, cdb := setupMods(t)
 	writeFile(t, filepath.Join(eng.ModsDir, "have", "init.lua"), "-- hi\n")
+	writeFile(t, filepath.Join(eng.ModsDir, "local", "mod.conf"), "name = local\ndepends = have, gone\noptional_depends = opt\n")
+	writeFile(t, filepath.Join(eng.ModsDir, "orphan", "mod.conf"), "name = orphan\nauthor = jane\ndepends = have, gone\n")
 	f.packagesJSON = `[
+		{"author": "jane", "name": "alpha", "type": "mod", "release": 2},
+		{"author": "jane", "name": "beta", "type": "mod", "release": 3},
 		{"author": "amy", "name": "extra", "type": "mod", "release": 7},
 		{"author": "amy", "name": "lib", "type": "mod", "release": 6},
 		{"author": "amy", "name": "have", "type": "mod", "release": 8},
@@ -763,6 +768,7 @@ func setupOptional(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
 	f.depsJSON = map[string]string{
 		"jane/alpha": `{"jane/alpha": [
 			{"name": "lib", "is_optional": false, "packages": ["amy/lib"]},
+			{"name": "base", "is_optional": false, "packages": ["gm/somegame"]},
 			{"name": "extra", "is_optional": true, "packages": ["amy/extra"]},
 			{"name": "have", "is_optional": true, "packages": ["amy/have"]},
 			{"name": "gameonly", "is_optional": true, "packages": ["gm/somegame"]},
@@ -774,22 +780,21 @@ func setupOptional(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
 	return eng, f, cdb
 }
 
-func TestModsListOptional(t *testing.T) {
-	eng, _, cdb := setupOptional(t)
+// setupGame adds the game mygame to eng, providing the mods named.
+func setupGame(t *testing.T, eng *engine.Info, mods ...string) {
+	t.Helper()
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-optional", "alpha")
-	if code != exitOK {
-		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	eng.GamesDir = t.TempDir()
+	writeFile(t, filepath.Join(eng.GamesDir, "mygame", "game.conf"), "title = My Game\n")
+	for _, m := range mods {
+		writeFile(t, filepath.Join(eng.GamesDir, "mygame", "mods", m, "init.lua"), "-- hi\n")
 	}
+}
+
+func checkTable(t *testing.T, stdout string, want [][]string) {
+	t.Helper()
 
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	want := [][]string{
-		{"DEP", "STATUS", "PACKAGE", "RELEASE"},
-		{"extra", "available", "amy/extra", "7"},
-		{"have", "installed", "-", "-"},
-		{"gameonly", "from", "game", "-", "-"},
-		{"nowhere", "not", "found", "-", "-"},
-	}
 	if len(lines) != len(want) {
 		t.Fatalf("stdout = %q", stdout)
 	}
@@ -800,39 +805,110 @@ func TestModsListOptional(t *testing.T) {
 	}
 }
 
-func TestModsListOptionalNames(t *testing.T) {
-	eng, _, cdb := setupOptional(t)
+func TestModsListDeps(t *testing.T) {
+	eng, _, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-optional", "--names", "alpha")
-	if code != exitOK || stdout != "extra\n" {
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", "alpha")
+	if code != exitOK || stderr != "" {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	checkTable(t, stdout, [][]string{
+		{"DEP", "STATUS", "PACKAGE", "RELEASE"},
+		{"lib", "available", "amy/lib", "6"},
+		{"base", "from", "game", "-", "-"},
+	})
+}
+
+func TestModsListDepsOptional(t *testing.T) {
+	eng, _, cdb := setupModDeps(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", "--optional", "alpha")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	checkTable(t, stdout, [][]string{
+		{"DEP", "STATUS", "PACKAGE", "RELEASE"},
+		{"extra", "available", "amy/extra", "7"},
+		{"have", "installed", "-", "-"},
+		{"gameonly", "from", "game", "-", "-"},
+		{"nowhere", "not", "found", "-", "-"},
+	})
+}
+
+func TestModsListDepsNames(t *testing.T) {
+	eng, _, cdb := setupModDeps(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", "--names", "alpha")
+	if code != exitOK || stdout != "lib\nbase\n" {
+		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithCDB(t, eng, cdb, "mods", "list-deps", "--names", "--optional", "alpha")
+	if code != exitOK || stdout != "extra\nhave\ngameonly\nnowhere\n" {
 		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 }
 
-func TestModsListOptionalGameProvides(t *testing.T) {
-	eng, _, cdb := setupOptional(t)
-	eng.GamesDir = t.TempDir()
-	writeFile(t, filepath.Join(eng.GamesDir, "mygame", "game.conf"), "title = My Game\n")
-	writeFile(t, filepath.Join(eng.GamesDir, "mygame", "mods", "extra", "init.lua"), "-- hi\n")
+func TestModsListDepsGameProvides(t *testing.T) {
+	eng, _, cdb := setupModDeps(t)
+	setupGame(t, &eng, "base")
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-optional", "--names", "--game", "mygame", "alpha")
-	if code != exitOK || stdout != "" {
-		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", "--game", "mygame", "alpha")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
 	}
+	checkTable(t, stdout, [][]string{
+		{"DEP", "STATUS", "PACKAGE", "RELEASE"},
+		{"lib", "available", "amy/lib", "6"},
+		{"base", "installed", "-", "-"},
+	})
 }
 
-func TestModsListOptionalNone(t *testing.T) {
-	eng, _, cdb := setupOptional(t)
+func TestModsListDepsNone(t *testing.T) {
+	eng, _, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-optional", "beta")
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", "beta")
+	if code != exitOK || stdout != "beta has no required dependencies.\n" {
+		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+	}
+
+	code, stdout, stderr = runWithCDB(t, eng, cdb, "mods", "list-deps", "--optional", "beta")
 	if code != exitOK || stdout != "beta has no optional dependencies.\n" {
 		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 }
 
-func TestModsListOptionalErrors(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
-	writeFile(t, filepath.Join(eng.ModsDir, "local", "mod.conf"), "name = local\n")
+func TestModsListDepsLocal(t *testing.T) {
+	tests := []struct {
+		mod, reason string
+		requests    int
+	}{
+		{"local", "no author in mod.conf", 0},
+		{"orphan", "no compatible package on ContentDB", 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mod, func(t *testing.T) {
+			eng, f, cdb := setupModDeps(t)
+
+			code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", tt.mod)
+			if code != exitOK || stderr != "luma: "+tt.mod+": "+tt.reason+", listed from mod.conf\n" {
+				t.Fatalf("code = %d, stderr = %q", code, stderr)
+			}
+			checkTable(t, stdout, [][]string{
+				{"DEP", "STATUS", "PACKAGE", "RELEASE"},
+				{"have", "installed", "-", "-"},
+				{"gone", "missing", "-", "-"},
+			})
+			if f.listRequests != tt.requests {
+				t.Errorf("package list requested %d times, want %d", f.listRequests, tt.requests)
+			}
+		})
+	}
+}
+
+func TestModsListDepsErrors(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 
 	tests := []struct {
 		args     []string
@@ -842,12 +918,11 @@ func TestModsListOptionalErrors(t *testing.T) {
 		{nil, exitUsage, "expected one mod name"},
 		{[]string{"alpha", "beta"}, exitUsage, "expected one mod name"},
 		{[]string{"nope"}, exitError, "not installed: nope"},
-		{[]string{"local"}, exitError, "local: can't look up dependencies, no author in mod.conf"},
 		{[]string{"--game", "nope", "alpha"}, exitError, "game not installed: nope"},
 	}
 
 	for _, tt := range tests {
-		args := append([]string{"mods", "list-optional"}, tt.args...)
+		args := append([]string{"mods", "list-deps"}, tt.args...)
 		code, _, stderr := runWithCDB(t, eng, cdb, args...)
 		if code != tt.code || !strings.Contains(stderr, tt.inStderr) {
 			t.Errorf("%v: code = %d, stderr = %q, want %d and %q", tt.args, code, stderr, tt.code, tt.inStderr)
@@ -859,10 +934,46 @@ func TestModsListOptionalErrors(t *testing.T) {
 	}
 }
 
-func TestModsInstallOptionalAll(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDeps(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-optional", "-y", "alpha")
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "-y", "alpha")
+	if code != exitError {
+		t.Errorf("code = %d, want %d", code, exitError)
+	}
+	for _, want := range []string{
+		"luma: could not find dependency base for jane/alpha, only games provide it, see --game\n",
+		"luma: required dependencies still missing: base\n",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q in it", stderr, want)
+		}
+	}
+	if !strings.Contains(stdout, "amy/lib: installed 6 (dependency of jane/alpha)") {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if got := f.downloaded(); got != "lib" {
+		t.Errorf("downloaded = %q, want lib", got)
+	}
+}
+
+func TestModsInstallDepsGameProvides(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
+	setupGame(t, &eng, "base")
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "-y", "--game", "mygame", "alpha")
+	if code != exitOK || stderr != "" {
+		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "lib" {
+		t.Errorf("downloaded = %q, want lib", got)
+	}
+}
+
+func TestModsInstallDepsOptional(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "-y", "--optional", "alpha")
 	if code != exitOK {
 		t.Fatalf("code = %d, stderr = %q", code, stderr)
 	}
@@ -879,38 +990,36 @@ func TestModsInstallOptionalAll(t *testing.T) {
 	}
 }
 
-func TestModsInstallOptionalNamed(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDepsNothingToDo(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-optional", "-y", "alpha", "have", "gameonly", "nowhere", "extra")
-	if code != exitOK {
-		t.Fatalf("code = %d, stderr = %q", code, stderr)
-	}
-	for _, want := range []string{
-		"have: already installed\n",
-		"gameonly: only provided by games, see --game\n",
-		"nowhere: no compatible package on ContentDB\n",
-	} {
-		if !strings.Contains(stdout, want) {
-			t.Errorf("stdout = %q, want %q in it", stdout, want)
+	for _, args := range [][]string{{"beta"}, {"--optional", "beta"}} {
+		args = append([]string{"mods", "install-deps"}, args...)
+		code, stdout, stderr := runWithCDB(t, eng, cdb, args...)
+		if code != exitOK || stdout != "Nothing to install.\n" {
+			t.Errorf("%v: code = %d, stdout = %q, stderr = %q", args, code, stdout, stderr)
 		}
 	}
-	if got := f.downloaded(); got != "extra,lib" {
-		t.Errorf("downloaded = %q, want extra,lib", got)
+
+	if got := f.downloaded(); got != "" {
+		t.Errorf("downloaded = %q, want nothing", got)
 	}
 }
 
-func TestModsInstallOptionalNothingToDo(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDepsLocal(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-optional", "alpha", "have")
-	if code != exitOK || stdout != "have: already installed\nNothing to install.\n" {
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "-y", "local")
+	want := "luma: local: no author in mod.conf, listed from mod.conf\n" +
+		"luma: could not find dependency gone for local\n" +
+		"luma: required dependencies still missing: gone\n"
+	if code != exitError || stdout != "Nothing to install.\n" || stderr != want {
 		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
 	}
 
-	code, stdout, stderr = runWithCDB(t, eng, cdb, "mods", "install-optional", "beta")
+	code, stdout, _ = runWithCDB(t, eng, cdb, "mods", "install-deps", "--optional", "local")
 	if code != exitOK || stdout != "Nothing to install.\n" {
-		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
+		t.Errorf("--optional: code = %d, stdout = %q", code, stdout)
 	}
 
 	if got := f.downloaded(); got != "" {
@@ -918,47 +1027,48 @@ func TestModsInstallOptionalNothingToDo(t *testing.T) {
 	}
 }
 
-func TestModsInstallOptionalUnknownNames(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDepsUsage(t *testing.T) {
+	eng, _, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-optional", "-y", "alpha", "extra", "bogus", "lib", "bogus")
-	if code != exitError || !strings.Contains(stderr, "not optional dependencies of alpha: bogus, lib") || stdout != "" {
-		t.Errorf("code = %d, stdout = %q, stderr = %q", code, stdout, stderr)
-	}
-	if got := f.downloaded(); got != "" {
-		t.Errorf("downloaded = %q, want nothing", got)
-	}
-
-	code, _, stderr = runWithCDB(t, eng, cdb, "mods", "install-optional")
-	if code != exitUsage || !strings.Contains(stderr, "expected a mod name") {
-		t.Errorf("code = %d, stderr = %q", code, stderr)
+	for _, args := range [][]string{nil, {"alpha", "extra"}} {
+		args = append([]string{"mods", "install-deps"}, args...)
+		code, _, stderr := runWithCDB(t, eng, cdb, args...)
+		if code != exitUsage || !strings.Contains(stderr, "expected one mod name") {
+			t.Errorf("%v: code = %d, stderr = %q", args, code, stderr)
+		}
 	}
 }
 
-func TestModsInstallOptionalDryRun(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDepsDryRun(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 
-	code, stdout, stderr := runAnswering(t, eng, cdb, "", "mods", "install-optional", "-n", "alpha")
+	code, stdout, stderr := runAnswering(t, eng, cdb, "", "mods", "install-deps", "-n", "--optional", "alpha")
 	if code != exitOK || strings.Contains(stderr, "Continue?") {
 		t.Errorf("code = %d, stderr = %q", code, stderr)
 	}
 	if !strings.Contains(stdout, "Would install:") || !strings.Contains(stdout, "amy/extra") || !strings.Contains(stdout, "amy/lib") {
 		t.Errorf("stdout = %q", stdout)
 	}
+
+	code, _, stderr = runWithCDB(t, eng, cdb, "mods", "install-deps", "-n", "alpha")
+	if code != exitOK || !strings.Contains(stderr, "could not find dependency base") {
+		t.Errorf("code = %d, stderr = %q, want missing base reported but exit %d", code, stderr, exitOK)
+	}
+
 	if got := f.downloaded(); got != "" {
 		t.Errorf("downloaded = %q, want nothing", got)
 	}
 }
 
-func TestModsInstallOptionalConfirms(t *testing.T) {
+func TestModsInstallDepsConfirms(t *testing.T) {
 	for _, tt := range []struct {
 		input string
 		want  bool
 	}{{"y\n", true}, {"\n", false}} {
 		t.Run(tt.input, func(t *testing.T) {
-			eng, f, cdb := setupOptional(t)
+			eng, f, cdb := setupModDeps(t)
 
-			code, _, stderr := runAnswering(t, eng, cdb, tt.input, "mods", "install-optional", "alpha")
+			code, _, stderr := runAnswering(t, eng, cdb, tt.input, "mods", "install-deps", "--optional", "alpha")
 			if !strings.Contains(stderr, "Will install:") || !strings.Contains(stderr, "amy/lib") ||
 				!strings.Contains(stderr, "Continue? [y/N]") {
 				t.Errorf("stderr = %q, want the plan and a prompt", stderr)
@@ -975,10 +1085,10 @@ func TestModsInstallOptionalConfirms(t *testing.T) {
 	}
 }
 
-func TestModsInstallOptionalWithoutTerminal(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDepsWithoutTerminal(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 
-	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "install-optional", "alpha")
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "--optional", "alpha")
 	if code != exitError || !strings.Contains(stderr, "would install amy/extra, amy/lib, rerun with -y") {
 		t.Errorf("code = %d, stderr = %q", code, stderr)
 	}
@@ -987,11 +1097,11 @@ func TestModsInstallOptionalWithoutTerminal(t *testing.T) {
 	}
 }
 
-func TestModsInstallOptionalFailure(t *testing.T) {
-	eng, f, cdb := setupOptional(t)
+func TestModsInstallDepsFailure(t *testing.T) {
+	eng, f, cdb := setupModDeps(t)
 	f.failFor = map[string]bool{"extra": true}
 
-	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-optional", "-y", "alpha")
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "-y", "--optional", "alpha")
 	if code != exitError || !strings.Contains(stderr, "1 of 2 installs failed") {
 		t.Errorf("code = %d, stderr = %q", code, stderr)
 	}

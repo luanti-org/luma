@@ -75,7 +75,7 @@ Named mods with no update, with no author in their `mod.conf`, or that are git c
 
 #### Dependencies
 
-If the new release of a mod needs mods that are not installed, luma installs those too, along with their own dependencies. Only hard dependencies are installed, never optional ones, see [mods install-optional](#mods-install-optional) for those. `--dry-run` lists them, and `--no-deps` turns this off.
+If the new release of a mod needs mods that are not installed, luma installs those too, along with their own dependencies. Only hard dependencies are installed, never optional ones, see [mods install-deps](#mods-install-deps) for those. `--dry-run` lists them, and `--no-deps` turns this off.
 
 Before installing anything new, luma shows what it will update and install, and asks once whether to continue. Answering anything but `y` or `yes` stops the run with nothing changed. `-y` skips the question. There is no question when no new dependencies are needed, so plain updates run unattended.
 
@@ -91,13 +91,14 @@ A dependency is installed into a folder named after its package. If that folder 
 
 If an update or a dependency install fails, the rest still go ahead, and luma exits with code 1 after reporting how many failed.
 
-### mods list-optional
+### mods list-deps
 
-Lists the optional dependencies of an installed mod, in the order ContentDB gives them, and whether each is installed.
+Lists the required dependencies of an installed mod, or its optional ones with `--optional`, in the order ContentDB gives them, and whether each is installed.
 
-    luma mods list-optional mesecons
-    luma mods list-optional --game minetest_game mesecons
-    luma mods list-optional --names mesecons
+    luma mods list-deps mesecons
+    luma mods list-deps --optional mesecons
+    luma mods list-deps --game minetest_game mesecons
+    luma mods list-deps --names mesecons
 
 | status | meaning |
 |---|---|
@@ -105,33 +106,36 @@ Lists the optional dependencies of an installed mod, in the order ContentDB give
 | `available` | not installed, the package shown would provide it |
 | `from game` | not installed, only games on ContentDB provide it |
 | `not found` | no package compatible with the engine provides it |
+| `missing` | not installed, and not looked up on ContentDB (see below) |
 
 | flag | meaning |
 |---|---|
-| `--names` | print only the dependencies that are `available`, one per line |
+| `--optional` | list the optional dependencies instead of the required ones |
+| `--names` | print only the dependency names, one per line |
 | `--game` | count this game's mods as installed |
 
 A dependency counts as installed the same way as for [mods update](#dependencies), and the package shown is picked the same way too. Dependencies a game provides show as `from game` unless the game is given with `--game`.
 
-The mod needs an author in its `mod.conf` to be looked up on ContentDB.
+A mod with no author in its `mod.conf`, or with no compatible package on ContentDB, can't be looked up. Its dependencies are then listed from its `mod.conf`, or for a modpack from those of its mods, and luma says so on stderr. Those not installed show as `missing`.
 
-### mods install-optional
+### mods install-deps
 
-Installs the named optional dependencies of an installed mod, or all `available` ones if none are named, along with their own hard dependencies.
+Installs the missing required dependencies of an installed mod, or its `available` optional ones with `--optional`, along with their own required dependencies.
 
-    luma mods install-optional mesecons                # install all available
-    luma mods install-optional mesecons foo bar        # install only foo and bar
-    luma mods install-optional -n mesecons             # show what would be installed
+    luma mods install-deps mesecons                # install missing required ones
+    luma mods install-deps --optional mesecons     # install available optional ones
+    luma mods install-deps -n mesecons             # show what would be installed
 
 | flag | meaning |
 |---|---|
+| `--optional` | install the optional dependencies instead of the required ones |
 | `-n`, `--dry-run` | show what would be installed without changing anything |
 | `-y`, `--yes` | install without asking |
 | `--game` | count this game's mods as installed |
 
 Before installing, luma shows what it will install and asks whether to continue, as `mods update` does for new dependencies. `-y` skips the question, and when luma is not run from a terminal it stops with an error unless `-y` is given.
 
-Naming something that is not an optional dependency of the mod is an error, and nothing is installed. Named dependencies that are already installed, or that only games or no compatible package provide, are reported and skipped.
+Required dependencies that can't be installed, because only games or no compatible package provide them, are reported. The rest are still installed, and luma then exits with code 1. This includes every missing dependency of a mod that can't be looked up on ContentDB, see [mods list-deps](#mods-list-deps). Optional dependencies that can't be installed are skipped quietly.
 
 Dependencies are installed into folders named after their packages, as with [mods update](#dependencies). If an install fails, the rest still go ahead, and luma exits with code 1 after reporting how many failed.
 

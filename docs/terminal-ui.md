@@ -38,7 +38,7 @@ Mods in the list are tagged:
 
 Press `u` on a mod tagged `[U]` to update only that one. Updating replaces the mod's folder with the new release.
 
-### Dependencies
+### Dependencies when updating
 
 Before updating, luma asks ContentDB which mods the new releases depend on. Only hard dependencies are considered. If all of them are already installed, the update starts right away.
 
@@ -63,6 +63,32 @@ With `<None>`, only the mods folder is considered. The choice lasts until luma i
 Mods with no author in their `mod.conf` (or `modpack.conf`) can't be matched to a ContentDB package, so they are never available for update.
 
 A mod whose folder is a git checkout (it has a `.git` inside) and has no `release` in its `mod.conf` is never available for update either, since updating would replace the working copy.
+
+### Mod details
+
+Select a mod to see its title, author, description, folder, path and the dependencies listed in its `mod.conf`. For a modpack, its mods are listed instead, and selecting one shows its details. A mod tagged `[!]` has no valid `mod.conf`, and its name is guessed from the folder name.
+
+Press `d` to open the dependencies screen of the mod or modpack.
+
+### Dependencies screen
+
+The dependencies screen lists the required dependencies of a mod, then the optional ones, as ContentDB gives them for its latest release. Each has a status:
+
+| status | meaning |
+|---|---|
+| `installed` | a mod of that name is installed |
+| `available` | not installed, the package shown would provide it |
+| `from game` | not installed, only games on ContentDB provide it |
+| `not found` | no package compatible with the engine provides it |
+| `missing` | not installed, and not looked up on ContentDB (see below) |
+
+The mods of the [base game](#base-game) count as installed. When a dependency is `from game`, a hint at the bottom points to that setting.
+
+`available` dependencies have a checkbox. Missing required ones start checked, optional ones unchecked, and `enter` or `space` toggles one. **Install selected** installs the checked ones, along with their own required dependencies. If that pulls in more packages than the checked ones, or some of their dependencies can't be found, the confirmation screen from [updating](#dependencies-when-updating) lists everything first. Otherwise the install starts right away.
+
+When the install is done, the list is refreshed, and the screen shows how many packages were installed and the reason for each failure. As when updating, a dependency never replaces a folder that already exists in the mods folder.
+
+A mod with no author in its `mod.conf`, or with no compatible package on ContentDB, can't be looked up. Its dependencies are then listed from its `mod.conf`, or for a modpack from those of its mods, leaving out mods the pack provides itself. The screen says which case applies. Dependencies that are not installed show as `missing`, and nothing can be installed from the screen.
 
 ## Games
 

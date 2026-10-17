@@ -209,9 +209,10 @@ func modsUpdate(c *ctx, args []string) int {
 	return exitOK
 }
 
-func modsListOptional(c *ctx, args []string) int {
+func modsListDeps(c *ctx, args []string) int {
 	fs := c.newFlagSet()
-	namesOnly := fs.Bool("names", false, "print only the optional dependencies that can be installed, one per line")
+	namesOnly := fs.Bool("names", false, "print only dependency names, one per line")
+	optional := fs.Bool("optional", false, "list the optional dependencies instead of the required ones")
 	gameID := fs.String("game", "", "count this game's mods as installed")
 	if code, done := c.parseFlagsWithArgs(fs, args); done {
 		return code
@@ -221,38 +222,42 @@ func modsListOptional(c *ctx, args []string) int {
 	}
 
 	name := fs.Arg(0)
-	opts, _, _, ok := c.optionalDeps(name, *gameID)
+	l, ok := c.modDeps(name, *gameID, *optional)
 	if !ok {
 		return exitError
 	}
 
 	if *namesOnly {
-		for _, o := range opts {
-			if o.Available && !o.Installed {
-				fmt.Fprintln(c.stdout, o.Dep)
-			}
+		for _, d := range l.deps {
+			fmt.Fprintln(c.stdout, d.Dep)
 		}
 		return exitOK
 	}
 
-	if len(opts) == 0 {
-		fmt.Fprintf(c.stdout, "%s has no optional dependencies.\n", name)
+	if len(l.deps) == 0 {
+		kind := "required"
+		if *optional {
+			kind = "optional"
+		}
+		fmt.Fprintf(c.stdout, "%s has no %s dependencies.\n", name, kind)
 		return exitOK
 	}
 
 	tw := tabwriter.NewWriter(c.stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "DEP\tSTATUS\tPACKAGE\tRELEASE")
 
-	for _, o := range opts {
+	for _, d := range l.deps {
 		switch {
-		case o.Installed:
-			fmt.Fprintf(tw, "%s\tinstalled\t-\t-\n", o.Dep)
-		case o.Available:
-			fmt.Fprintf(tw, "%s\tavailable\t%s/%s\t%d\n", o.Dep, o.Package.Author, o.Package.Name, o.Package.Release)
-		case o.GameOnly:
-			fmt.Fprintf(tw, "%s\tfrom game\t-\t-\n", o.Dep)
+		case d.Installed:
+			fmt.Fprintf(tw, "%s\tinstalled\t-\t-\n", d.Dep)
+		case l.local:
+			fmt.Fprintf(tw, "%s\tmissing\t-\t-\n", d.Dep)
+		case d.Available:
+			fmt.Fprintf(tw, "%s\tavailable\t%s/%s\t%d\n", d.Dep, d.Package.Author, d.Package.Name, d.Package.Release)
+		case d.GameOnly:
+			fmt.Fprintf(tw, "%s\tfrom game\t-\t-\n", d.Dep)
 		default:
-			fmt.Fprintf(tw, "%s\tnot found\t-\t-\n", o.Dep)
+			fmt.Fprintf(tw, "%s\tnot found\t-\t-\n", d.Dep)
 		}
 	}
 
@@ -261,147 +266,154 @@ func modsListOptional(c *ctx, args []string) int {
 	return exitOK
 }
 
-func modsInstallOptional(c *ctx, args []string) int {
+func modsInstallDeps(c *ctx, args []string) int {
 	fs := c.newFlagSet()
 	dryRun := fs.BoolP("dry-run", "n", false, "show what would be installed without changing anything")
 	yes := fs.BoolP("yes", "y", false, "install without asking")
+	optional := fs.Bool("optional", false, "install the optional dependencies instead of the required ones")
 	gameID := fs.String("game", "", "count this game's mods as installed")
 	if code, done := c.parseFlagsWithArgs(fs, args); done {
 		return code
 	}
-	if fs.NArg() == 0 {
-		return c.usageErr("%s: expected a mod name", fs.Name())
+	if fs.NArg() != 1 {
+		return c.usageErr("%s: expected one mod name", fs.Name())
 	}
 
-	name, deps := fs.Arg(0), dedupe(fs.Args()[1:])
-	opts, provided, index, ok := c.optionalDeps(name, *gameID)
+	l, ok := c.modDeps(fs.Arg(0), *gameID, *optional)
 	if !ok {
 		return exitError
 	}
 
-	picks, ok := pickOptional(c, name, opts, deps)
-	if !ok {
-		return exitError
-	}
-	if len(picks) == 0 {
-		fmt.Fprintln(c.stdout, "Nothing to install.")
-		return exitOK
+	var picks []update.ModDep
+	var missing []string
+	for _, d := range l.deps {
+		switch {
+		case d.Installed:
+		case !l.local && d.Available:
+			picks = append(picks, d)
+		case *optional:
+			// optional ones that can't be installed don't leave the mod broken
+		case d.GameOnly:
+			missing = append(missing, d.Dep)
+			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s, only games provide it, see --game\n", d.Dep, d.RequiredBy)
+		default:
+			missing = append(missing, d.Dep)
+			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s\n", d.Dep, d.RequiredBy)
+		}
 	}
 
-	plan, err := update.PlanDeps(c.cdb, picks, provided, index, nil)
-	if err != nil {
-		return c.err("%v", err)
+	var plan update.DepPlan
+	if len(picks) > 0 {
+		var err error
+		plan, err = update.PlanDeps(c.cdb, picks, l.provided, l.index, nil)
+		if err != nil {
+			return c.err("%v", err)
+		}
 	}
 
 	c.printNotFound(plan.NotFound)
+	for _, nf := range plan.NotFound {
+		missing = append(missing, nf.Dep)
+	}
 
-	if *dryRun {
+	switch {
+	case len(plan.Install) == 0:
+		fmt.Fprintln(c.stdout, "Nothing to install.")
+
+	case *dryRun:
 		fmt.Fprintln(c.stdout, "Would install:")
 		printDepInstalls(c.stdout, plan.Install)
 		return exitOK
+
+	default:
+		if !*yes {
+			if !c.interactive {
+				return c.err("would install %s, rerun with -y", depNames(plan.Install))
+			}
+			fmt.Fprintln(c.stderr, "Will install:")
+			printDepInstalls(c.stderr, plan.Install)
+			if !c.askContinue() {
+				return c.err("aborted, nothing was changed")
+			}
+		}
+
+		if failed := c.installDeps(plan.Install); failed > 0 {
+			return c.err("%d of %d installs failed", failed, len(plan.Install))
+		}
 	}
 
-	if !*yes {
-		if !c.interactive {
-			return c.err("would install %s, rerun with -y", depNames(plan.Install))
-		}
-		fmt.Fprintln(c.stderr, "Will install:")
-		printDepInstalls(c.stderr, plan.Install)
-		if !c.askContinue() {
-			return c.err("aborted, nothing was changed")
-		}
-	}
-
-	if failed := c.installDeps(plan.Install); failed > 0 {
-		return c.err("%d of %d installs failed", failed, len(plan.Install))
+	if len(missing) > 0 && !*dryRun {
+		return c.err("required dependencies still missing: %s", strings.Join(dedupe(missing), ", "))
 	}
 
 	return exitOK
 }
 
-// pickOptional picks the opts named in deps, or all installable ones when deps is empty.
-// Names that aren't optional dependencies of mod are an error, ok is false then.
-func pickOptional(c *ctx, mod string, opts []update.ModDep, deps []string) (picks []update.ModDep, ok bool) {
-	if len(deps) == 0 {
-		for _, o := range opts {
-			if o.Available && !o.Installed {
-				picks = append(picks, o)
-			}
-		}
-		return picks, true
-	}
-
-	byDep := make(map[string]update.ModDep, len(opts))
-	for _, o := range opts {
-		byDep[o.Dep] = o
-	}
-
-	var unknown []string
-	for _, d := range deps {
-		if _, ok := byDep[d]; !ok {
-			unknown = append(unknown, d)
-		}
-	}
-	if len(unknown) > 0 {
-		c.err("not optional dependencies of %s: %s", mod, strings.Join(unknown, ", "))
-		return nil, false
-	}
-
-	for _, d := range deps {
-		switch o := byDep[d]; {
-		case o.Installed:
-			fmt.Fprintf(c.stdout, "%s: already installed\n", d)
-		case o.GameOnly:
-			fmt.Fprintf(c.stdout, "%s: only provided by games, see --game\n", d)
-		case !o.Available:
-			fmt.Fprintf(c.stdout, "%s: no compatible package on ContentDB\n", d)
-		default:
-			picks = append(picks, o)
-		}
-	}
-
-	return picks, true
+// depList is what modDeps found, along with the provided names and package index used to find it.
+type depList struct {
+	deps     []update.ModDep
+	provided map[string]bool
+	index    map[string]contentdb.Package
+	local    bool // listed from mod.conf, so no dependency has a package
 }
 
-// optionalDeps lists the optional dependencies of the installed mod name, with the provided names and package index
-// used to find them. It reports any error itself, ok is false on failure.
-func (c *ctx) optionalDeps(name, gameID string) (opts []update.ModDep, provided map[string]bool,
-	index map[string]contentdb.Package, ok bool) {
+// modDeps lists the required or optional dependencies of the installed mod name.
+// Mods ContentDB can't look up are listed from their mod.conf. It reports any error itself, ok is false on failure.
+func (c *ctx) modDeps(name, gameID string, optional bool) (l depList, ok bool) {
 	mods, ok := c.scanMods()
 	if !ok {
-		return nil, nil, nil, false
+		return depList{}, false
 	}
 
 	i := slices.IndexFunc(mods, func(m content.Mod) bool { return m.Name == name })
 	if i < 0 {
 		c.err("not installed: %s", name)
-		return nil, nil, nil, false
+		return depList{}, false
 	}
 	m := mods[i]
-	if m.Author == "" {
-		c.err("%s: can't look up dependencies, no author in %s", name, m.ConfName())
-		return nil, nil, nil, false
-	}
 
-	provided, ok = c.providedModNames(mods, gameID)
+	l.provided, ok = c.providedModNames(mods, gameID)
 	if !ok {
-		return nil, nil, nil, false
+		return depList{}, false
 	}
 
-	index, err := c.packageIndex()
-	if err != nil {
-		c.err("%v", err)
-		return nil, nil, nil, false
+	if m.Author == "" {
+		c.listedLocally(m, "no author in "+m.ConfName())
+		l.local = true
+	} else {
+		var err error
+		l.index, err = c.packageIndex()
+		if err != nil {
+			c.err("%v", err)
+			return depList{}, false
+		}
+
+		if _, found := l.index[strings.ToLower(m.Author+"/"+m.Name)]; found {
+			l.deps, err = update.ListDeps(c.cdb, m.Author+"/"+m.Name, l.provided, l.index)
+			if err != nil {
+				c.err("%v", err)
+				return depList{}, false
+			}
+		} else {
+			c.listedLocally(m, "no compatible package on ContentDB")
+			l.local = true
+		}
 	}
 
-	opts, err = update.ListDeps(c.cdb, m.Author+"/"+m.Name, provided, index)
-	if err != nil {
-		c.err("%v", err)
-		return nil, nil, nil, false
+	if l.local {
+		l.deps = update.LocalDeps(m, l.provided)
 	}
-	opts = slices.DeleteFunc(opts, func(o update.ModDep) bool { return !o.Optional })
+	l.deps = slices.DeleteFunc(l.deps, func(d update.ModDep) bool { return d.Optional != optional })
 
-	return opts, provided, index, true
+	return l, true
+}
+
+func (c *ctx) listedLocally(m content.Mod, reason string) {
+	source := "mod.conf"
+	if m.IsModpack {
+		source = "its mods' mod.conf"
+	}
+	fmt.Fprintf(c.stderr, "luma: %s: %s, listed from %s\n", m.Name, reason, source)
 }
 
 // installDeps installs each of installs, reporting the outcome of each, and returns how many failed.
