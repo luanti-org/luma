@@ -86,18 +86,29 @@ func TestRunUsageErrors(t *testing.T) {
 	}
 }
 
-func TestNounsSorted(t *testing.T) {
+func TestCommandsSorted(t *testing.T) {
 	withTestCommands(t)
 
-	nouns := Nouns()
-	for i := 1; i < len(nouns); i++ {
-		if nouns[i-1].Name >= nouns[i].Name {
-			t.Errorf("Nouns not sorted: %q before %q", nouns[i-1].Name, nouns[i].Name)
+	cmds := Commands()
+	for i := 1; i < len(cmds); i++ {
+		if cmds[i-1].Name >= cmds[i].Name {
+			t.Errorf("Commands not sorted: %q before %q", cmds[i-1].Name, cmds[i].Name)
 		}
 	}
-	for _, n := range nouns {
-		if n.Summary == "" {
-			t.Errorf("noun %q has no summary", n.Name)
+	for _, c := range cmds {
+		if c.Summary == "" {
+			t.Errorf("command %q has no summary", c.Name)
+		}
+	}
+}
+
+func TestTopLevelNotNouns(t *testing.T) {
+	for name := range topLevel {
+		if _, ok := commands[name]; ok {
+			t.Errorf("%q is both a top-level command and a noun", name)
+		}
+		if _, ok := aliases[name]; ok {
+			t.Errorf("%q is both a top-level command and a noun alias", name)
 		}
 	}
 }

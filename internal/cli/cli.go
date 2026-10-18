@@ -1,4 +1,4 @@
-// Package cli runs non-interactive luma commands, in the form <noun> <verb> [flags].
+// Package cli runs non-interactive luma commands, in the form <noun> <verb> [flags] or <command> [flags].
 package cli
 
 import (
@@ -37,14 +37,14 @@ type ctx struct {
 	stdin       io.Reader
 	interactive bool // stdin is a terminal, so the user can be asked to confirm
 
-	cmdName string // e.g. "mods update"
+	cmdName string // e.g. "mods update" or "install"
 	cmd     verb
 }
 
 type handler func(c *ctx, args []string) int
 
 type verb struct {
-	usage   string // what follows "luma <noun> <verb>", usually flags and params: "[-n] [name...]"
+	usage   string // what follows "luma <noun> <verb>" or "luma <command>", usually flags and params: "[-n] [name...]"
 	summary string
 	run     handler
 }
@@ -85,23 +85,32 @@ var commands = map[string]noun{
 	},
 }
 
+// topLevel holds the commands with no noun, for getting content of any type. Their names must not be nouns.
+var topLevel = map[string]verb{
+	"install": {"[-n] [-y] [--no-deps] [--game id] name|author/name...", "install ContentDB packages, with the dependencies of mods", install},
+}
+
 // aliases maps alternative noun names to their entry in commands, help lists only the latter
 var aliases = map[string]string{
 	"textures": "texturepacks",
 }
 
-// Noun is a top-level command group, as listed in help
-type Noun struct {
+// Command is a top-level command or command group, as listed in help
+type Command struct {
 	Name    string
 	Summary string
 }
 
-// Nouns returns the command groups in name order
-func Nouns() []Noun {
-	out := make([]Noun, 0, len(commands))
-	for _, name := range slices.Sorted(maps.Keys(commands)) {
-		out = append(out, Noun{Name: name, Summary: commands[name].summary})
+// Commands returns the top-level commands and command groups in name order
+func Commands() []Command {
+	out := make([]Command, 0, len(commands)+len(topLevel))
+	for name, n := range commands {
+		out = append(out, Command{Name: name, Summary: n.summary})
 	}
+	for name, v := range topLevel {
+		out = append(out, Command{Name: name, Summary: v.summary})
+	}
+	slices.SortFunc(out, func(a, b Command) int { return strings.Compare(a.Name, b.Name) })
 	return out
 }
 
@@ -118,7 +127,13 @@ func Run(args []string, eng engine.Info, stdout, stderr io.Writer) int {
 
 func (c *ctx) run(args []string) int {
 	if len(args) == 0 {
-		return c.usageErr("expected <noun> <verb>")
+		return c.usageErr("expected a command")
+	}
+
+	if v, ok := topLevel[args[0]]; ok {
+		c.cmdName = args[0]
+		c.cmd = v
+		return v.run(c, args[1:])
 	}
 
 	nounName := args[0]

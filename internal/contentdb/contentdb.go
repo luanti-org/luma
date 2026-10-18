@@ -7,6 +7,7 @@ package contentdb
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,9 @@ const (
 	ReasonUpdate     = "update"
 	ReasonDependency = "dependency"
 )
+
+// ErrNotFound is returned by API calls that got a 404, such as a package that doesn't exist.
+var ErrNotFound = errors.New("not found (status 404)")
 
 // Client talks to a ContentDB-compatible API.
 type Client struct {
@@ -374,6 +378,9 @@ func (c *Client) get(path string, query url.Values, out interface{}) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("contentdb: %s: %w", full, ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("contentdb: %s: unexpected status %d: %s", full, resp.StatusCode, string(body))

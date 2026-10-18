@@ -2,9 +2,10 @@
 title: Command line
 ---
 
-Passing a command runs it without opening the terminal UI. Commands take the form `<noun> <verb>`:
+Passing a command runs it without opening the terminal UI. Commands for installed content take the form `<noun> <verb>`, while [install](#install) works for any type of content and has no noun:
 
     luma [global flags] <noun> <verb> [flags] [arguments]
+    luma [global flags] install [flags] [arguments]
 
 Global flags, such as `--dir`, go before the command. See [Global flags](../global-flags) for the full list.
 
@@ -15,9 +16,9 @@ Global flags, such as `--dir`, go before the command. See [Global flags](../glob
 
 | command | shows |
 |---|---|
-| `luma --help` | global flags and command groups |
+| `luma --help` | global flags, commands and command groups |
 | `luma mods --help` | the commands of a group |
-| `luma mods update --help` | the flags of a command |
+| `luma mods update --help`, `luma install --help` | the flags of a command |
 
 ## Exit codes
 
@@ -28,6 +29,45 @@ Global flags, such as `--dir`, go before the command. See [Global flags](../glob
 | 2 | usage error, e.g. unknown command or flag |
 
 Results are written to standard output, errors and warnings to standard error.
+
+## install
+
+Installs packages from ContentDB: mods, modpacks, games and texture packs. Each package is installed at its newest release compatible with the engine.
+
+    luma install mineclonia                  # install by package name
+    luma install TenPlus1/protector          # install by author/name
+    luma install animalia mobs_monster       # install several at once
+    luma install -n animalia                 # show what would be installed
+    luma install --game minetest_game animalia   # dependencies minetest_game provides are not installed
+
+| flag | meaning |
+|---|---|
+| `-n`, `--dry-run` | show what would be installed without changing anything |
+| `-y`, `--yes` | install dependencies without asking |
+| `--no-deps` | don't install the dependencies of mods |
+| `--game` | count this game's mods as installed when resolving dependencies |
+
+---
+
+A package is named either as `author/name` or by its name alone. Both ignore case. Several authors can publish packages of the same name, and a name alone that matches more than one of them is an error, as luma doesn't guess:
+
+    luma: "protector" is ambiguous, use "author/name" format
+
+A name that matches no package is reported as not found. If it matches the title of exactly one package instead, luma suggests that package. For VoxeLibre, whose package is named `mineclone2`:
+
+    luma: "voxelibre" not found on ContentDB, did you mean Wuzzy/mineclone2, "VoxeLibre (formerly MineClone2)"?
+
+An `author/name` package that exists but has no release compatible with the engine is reported as such.
+
+A package that is already installed is an error too. Use the `update` command of its type instead, such as [mods update](#mods-update). It also counts as installed if its folder already exists, whatever is in it.
+
+For a single command all intended installed packages must succeed. If any of them is not found, ambiguous or already installed, each problem is reported, nothing is installed, and luma exits with code 1.
+
+Mods and modpacks are installed with their hard dependencies: luma shows what it will install and asks whether to continue, `-y` skips the question, and when luma is not run from a terminal it stops with an error unless `-y` or `--no-deps` is given. Games and texture packs have no dependencies to install.
+
+As with the Luanti client, luma writes the package's `author` and `release` into its `mod.conf`, `modpack.conf`, `game.conf` or `texture_pack.conf`, so later updates can find it. For mods and texture packs the `name` is written too.
+
+If a download or install fails partway, the packages this run already installed are removed again, so nothing is changed, and luma exits with code 1.
 
 ## mods
 
