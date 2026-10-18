@@ -15,7 +15,7 @@ const header = `luma - manage Luanti mods, games and texture packs
 
 Usage:
   luma [global flags]                     launch the terminal UI
-  luma [global flags] <noun> <verb> ...   run a non-interactive command
+  luma [global flags] <command> ...       run a non-interactive command
 
 Global flags must come before the command.
 
@@ -23,11 +23,11 @@ Global flags:
 `
 
 const footer = `
-Run 'luma <noun> --help' for its commands.
+Run 'luma <command> --help' for its usage.
 Run with no command or only --dir to open the Terminal UI.
 `
 
-// Print writes the top-level help to w: global flags and the command groups.
+// Print writes the top-level help to w: global flags and the commands.
 func Print(w io.Writer, globals *pflag.FlagSet) {
 	fmt.Fprint(w, header)
 
@@ -38,7 +38,7 @@ func Print(w io.Writer, globals *pflag.FlagSet) {
 
 	fmt.Fprint(w, "\nCommands:\n")
 	tw := tabwriter.NewWriter(w, 0, 0, 4, ' ', 0)
-	for _, n := range cli.Nouns() {
+	for _, n := range cli.Commands() {
 		fmt.Fprintf(tw, "  %s\t%s\n", n.Name, n.Summary)
 	}
 	tw.Flush()

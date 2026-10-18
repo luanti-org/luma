@@ -2,7 +2,6 @@ package update
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -196,14 +195,7 @@ func InstallDep(client *contentdb.Client, modsDir string, d DepInstall) error {
 		return fmt.Errorf("invalid package name %q", d.Package.Name)
 	}
 
-	dest := filepath.Join(modsDir, d.Package.Name)
-
-	// InstallMod replaces its target, which here would be a folder luma didn't put there
-	if _, err := os.Stat(dest); err == nil {
-		return fmt.Errorf("folder %s already exists", dest)
-	}
-
-	return InstallMod(client, d.Package.Author, d.Package.Name, d.Package.Release, dest, contentdb.ReasonDependency)
+	return installNew(client, d.Package, filepath.Join(modsDir, d.Package.Name), contentdb.ReasonDependency)
 }
 
 type depResolver struct {

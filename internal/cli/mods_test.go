@@ -24,6 +24,7 @@ type fakeCDB struct {
 	failFor      map[string]bool
 	packagesJSON string            // empty serves no packages
 	depsJSON     map[string]string // by "author/name", missing serves no dependencies
+	details      map[string]bool   // "author/name" packages whose details are served, others 404
 
 	mu           sync.Mutex
 	downloads    []string
@@ -62,6 +63,16 @@ func (f *fakeCDB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write([]byte("{}"))
+		return
+	}
+
+	// /api/packages/<author>/<name>/
+	if len(parts) == 4 && parts[0] == "api" {
+		if !f.details[parts[2]+"/"+parts[3]] {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(`{"author": "` + parts[2] + `", "name": "` + parts[3] + `"}`))
 		return
 	}
 
