@@ -2,6 +2,7 @@ package update
 
 import (
 	"archive/zip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -57,6 +58,12 @@ func DownloadPackage(client *contentdb.Client, downloadURL string, destDir strin
 	return moveDir(extractedDir, destDir)
 }
 
+// Limits on a zip's contents, which may come from an untrusted local file. Vars so tests can lower them.
+var (
+	maxZipEntries         = 10000
+	maxUnzippedSize int64 = 500 << 20
+)
+
 // unzip extracts the zip archive at zipPath into destDir.
 func unzip(zipPath, destDir string) error {
 	r, err := zip.OpenReader(zipPath)
@@ -65,8 +72,13 @@ func unzip(zipPath, destDir string) error {
 	}
 	defer r.Close()
 
+	if len(r.File) > maxZipEntries {
+		return fmt.Errorf("zip has %d entries, more than the limit of %d", len(r.File), maxZipEntries)
+	}
+
+	remaining := maxUnzippedSize
 	for _, f := range r.File {
-		if err := extractZipFile(f, destDir); err != nil {
+		if err := extractZipFile(f, destDir, &remaining); err != nil {
 			return fmt.Errorf("extract %s: %w", f.Name, err)
 		}
 	}
@@ -74,7 +86,8 @@ func unzip(zipPath, destDir string) error {
 	return nil
 }
 
-func extractZipFile(f *zip.File, destDir string) error {
+// extractZipFile extracts f into destDir, taking its size from remaining.
+func extractZipFile(f *zip.File, destDir string, remaining *int64) error {
 	path := filepath.Join(destDir, f.Name)
 
 	// guard against zip slip: reject entries that escape destDir
@@ -102,7 +115,15 @@ func extractZipFile(f *zip.File, destDir string) error {
 	}
 	defer dst.Close()
 
-	_, err = io.Copy(dst, src)
+	// the sizes in the zip's header can lie, so count what is actually written
+	n, err := io.CopyN(dst, src, *remaining+1)
+	*remaining -= n
+	if *remaining < 0 {
+		return fmt.Errorf("zip unpacks to more than the limit of %d MB", maxUnzippedSize>>20)
+	}
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
 	return err
 }
 
@@ -167,6 +188,11 @@ func copyDir(srcDir, destDir string) error {
 			return err
 		}
 		target := filepath.Join(destDir, rel)
+
+		// a local folder's link could point anywhere on this machine
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%s: symlinks are not supported", rel)
+		}
 
 		if info.IsDir() {
 			return os.MkdirAll(target, 0o755)

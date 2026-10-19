@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/luanti-org/luma/internal/version"
@@ -241,6 +242,80 @@ func (c *Client) Dependencies(author, name string, onlyHard bool) (map[string][]
 	}
 
 	return deps, nil
+}
+
+// modProvidersPage is one page of GET /api/dependencies/
+type modProvidersPage struct {
+	PageCount int `json:"page_count"`
+	Items     []struct {
+		Author   string   `json:"author"`
+		Name     string   `json:"name"`
+		Provides []string `json:"provides"`
+	} `json:"items"`
+}
+
+// modProvidersFetches is how many pages ModProviders fetches at once
+const modProvidersFetches = 4
+
+// ModProviders fetches every page of GET /api/dependencies/?type=mod
+// and returns a map of mod name to the "author/name" packages that contain it, modpack members included.
+func (c *Client) ModProviders() (map[string][]string, error) {
+	page := func(n int) (modProvidersPage, error) {
+		// oldest first, so a package added mid-fetch lands on the last page instead of shifting the rest
+		query := url.Values{
+			"type":  {"mod"},
+			"sort":  {"created_at"},
+			"order": {"asc"},
+			"n":     {"300"},
+			"page":  {strconv.Itoa(n)},
+		}
+		var p modProvidersPage
+		err := c.get("/api/dependencies/", query, &p)
+		return p, err
+	}
+
+	first, err := page(1)
+	if err != nil {
+		return nil, err
+	}
+
+	pages := make([]modProvidersPage, max(first.PageCount, 1))
+	pages[0] = first
+	errs := make([]error, len(pages))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, modProvidersFetches)
+	for i := 1; i < len(pages); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			pages[i], errs[i] = page(i + 1)
+		}()
+	}
+	wg.Wait()
+
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+
+	providers := make(map[string][]string)
+	seen := make(map[string]bool)
+	for _, p := range pages {
+		for _, item := range p.Items {
+			key := item.Author + "/" + item.Name
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			for _, mod := range item.Provides {
+				providers[mod] = append(providers[mod], key)
+			}
+		}
+	}
+
+	return providers, nil
 }
 
 // UpdatesOptions filters an update check. Zero values are omitted.

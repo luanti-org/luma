@@ -2,8 +2,10 @@ package update
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/luanti-org/luma/internal/content"
@@ -23,6 +25,7 @@ type MissingDep struct {
 	Dep        string
 	RequiredBy string // "author/name"
 	Excluded   bool   // skipped on request rather than not found
+	Ambiguous  bool   // several packages are named Dep and none was picked
 	Package    string // "author/name" that was excluded, empty if excluded by Dep
 }
 
@@ -65,7 +68,99 @@ func FetchPackageIndex(client *contentdb.Client, engineInfo engine.Info) (map[st
 // roots are "author/name" ids, installed holds mod names on disk, excluded holds mod or package names to skip.
 func ResolveDeps(client *contentdb.Client, roots []string, installed map[string]bool,
 	packages map[string]contentdb.Package, excluded map[string]bool) (DepPlan, error) {
-	r := &depResolver{
+	r := newDepResolver(client, installed, packages, excluded)
+	return r.resolveRoots(roots)
+}
+
+// ResolveInstallDeps plans the hard dependencies of the ContentDB roots and the local mods, see ResolveDeps.
+// A local mod's dependencies come from its own conf files. ContentDB only picks their packages,
+// from the package its conf's author and name point to if any, else the one package named like the dependency.
+func ResolveInstallDeps(client *contentdb.Client, roots []string, locals []LocalPackage,
+	installed map[string]bool, packages map[string]contentdb.Package) (DepPlan, error) {
+	all := maps.Clone(installed)
+	for _, p := range locals {
+		if p.Type == "mod" {
+			maps.Copy(all, content.ProvidedModNames([]content.Mod{p.Mod}))
+		}
+	}
+
+	r := newDepResolver(client, all, packages, nil)
+	var localRoots []string
+
+	for _, p := range locals {
+		if p.Type != "mod" {
+			continue
+		}
+
+		deps, err := localDependencies(client, p, packages)
+		if err != nil {
+			return DepPlan{}, err
+		}
+
+		// a local root has no "/", so its key can't match a ContentDB package
+		r.raw[packageKey(p.Name)] = deps
+		localRoots = append(localRoots, p.Name)
+
+		for _, d := range deps {
+			if d.Packages == nil && !all[d.Name] && len(modsNamed(packages, d.Name)) > 1 && !r.seen[d.Name] {
+				r.miss(MissingDep{Dep: d.Name, RequiredBy: p.Name, Ambiguous: true})
+			}
+		}
+	}
+
+	return r.resolveRoots(slices.Concat(roots, localRoots))
+}
+
+// modsNamed returns the mod packages named name, which a dependency of that name likely means.
+func modsNamed(packages map[string]contentdb.Package, name string) []contentdb.Package {
+	var out []contentdb.Package
+	for _, pkg := range FindPackages(packages, name) {
+		if pkg.Type == "mod" {
+			out = append(out, pkg)
+		}
+	}
+	return out
+}
+
+// localDependencies returns the hard dependencies in p's conf files with the packages that provide them.
+func localDependencies(client *contentdb.Client, p LocalPackage, packages map[string]contentdb.Package) ([]contentdb.Dependency, error) {
+	providers := make(map[string][]string)
+
+	id := p.Author + "/" + p.Name
+	if _, ok := packages[packageKey(id)]; ok && p.Author != "" {
+		resp, err := client.Dependencies(p.Author, p.Name, false)
+		if err != nil {
+			return nil, fmt.Errorf("fetching dependencies of %s: %w", id, err)
+		}
+		for respID, deps := range resp {
+			if packageKey(respID) != packageKey(id) {
+				continue
+			}
+			for _, d := range deps {
+				providers[d.Name] = d.Packages
+			}
+		}
+	}
+
+	hard, _ := p.Mod.Deps()
+	out := make([]contentdb.Dependency, len(hard))
+
+	for i, name := range hard {
+		out[i] = contentdb.Dependency{Name: name, Packages: providers[name]}
+		if out[i].Packages != nil {
+			continue
+		}
+		if found := modsNamed(packages, name); len(found) == 1 {
+			out[i].Packages = []string{found[0].Author + "/" + found[0].Name}
+		}
+	}
+
+	return out, nil
+}
+
+func newDepResolver(client *contentdb.Client, installed map[string]bool,
+	packages map[string]contentdb.Package, excluded map[string]bool) *depResolver {
+	return &depResolver{
 		client:    client,
 		installed: installed,
 		packages:  packages,
@@ -74,7 +169,9 @@ func ResolveDeps(client *contentdb.Client, roots []string, installed map[string]
 		seen:      make(map[string]bool),
 		raw:       make(map[string][]contentdb.Dependency),
 	}
+}
 
+func (r *depResolver) resolveRoots(roots []string) (DepPlan, error) {
 	for _, root := range roots {
 		r.planned[packageKey(root)] = true
 	}

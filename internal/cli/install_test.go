@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"archive/zip"
+	"bytes"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -237,5 +239,172 @@ func TestInstallUsage(t *testing.T) {
 	code, _, stderr := run(t, engine.Info{}, "install")
 	if code != exitUsage || !strings.Contains(stderr, "expected at least one package") {
 		t.Errorf("code = %d, stderr = %q", code, stderr)
+	}
+}
+
+// writeZip writes a zip at path holding files, with names relative to the zip's root.
+func writeZip(t *testing.T, path string, files map[string]string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for name, data := range files {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Write([]byte(data))
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, path, buf.String())
+}
+
+func TestInstallLocalModWithDeps(t *testing.T) {
+	eng, f, cdb := setupInstall(t)
+	zipPath := filepath.Join(t.TempDir(), "upload.zip")
+	writeZip(t, zipPath, map[string]string{
+		"mymod-main/init.lua": "",
+		"mymod-main/mod.conf": "name = mymod\ndepends = lib, thing\n",
+	})
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "install", "-y", "-l", zipPath)
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "lib,thing" {
+		t.Errorf("downloads = %q", got)
+	}
+	if !strings.Contains(stdout, "amy/lib: installed 9 (dependency of mymod)") || !strings.Contains(stdout, "mymod: installed from "+zipPath) {
+		t.Errorf("stdout = %q", stdout)
+	}
+
+	conf := readConf(t, filepath.Join(eng.ModsDir, "mymod", "mod.conf"))
+	if conf["name"] != "mymod" || conf["author"] != "" || conf["release"] != "" {
+		t.Errorf("mod.conf = %v, want it unchanged", conf)
+	}
+}
+
+func TestInstallLocalGameWithPackage(t *testing.T) {
+	eng, f, cdb := setupInstall(t)
+	src := filepath.Join(t.TempDir(), "mineclonia-main")
+	writeFile(t, filepath.Join(src, "game.conf"), "title = Mineclonia\n")
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "install", "-l", src, "--name", "mineclonia", "jane/pixels")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if got := f.downloaded(); got != "pixels" {
+		t.Errorf("downloads = %q", got)
+	}
+	if !strings.Contains(stdout, "mineclonia: installed from "+src) {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(eng.GamesDir, "mineclonia", "game.conf")); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestInstallLocalErrors(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     func(dir string) []string
+		wantCode int
+		want     string
+	}{
+		{"missing path", func(dir string) []string { return []string{"-l", filepath.Join(dir, "nope.zip")} },
+			exitError, "nope.zip: no such file or folder"},
+		{"path without -l", func(dir string) []string { return []string{"./mymod.zip"} },
+			exitError, `"./mymod.zip" looks like a path, use -l ./mymod.zip`},
+		{"--name with two -l", func(dir string) []string {
+			return []string{"-l", filepath.Join(dir, "mymod"), "-l", filepath.Join(dir, "other"), "--name", "x"}
+		}, exitUsage, "--name needs exactly one --local"},
+		{"invalid name", func(dir string) []string { return []string{"-l", filepath.Join(dir, "bad-name")} },
+			exitError, `"bad-name" is not a valid name, use --name`},
+		{"already installed", func(dir string) []string { return []string{"-l", filepath.Join(dir, "have")} },
+			exitError, `mod "have" is already installed`},
+		{"same folder", func(dir string) []string { return []string{"-l", filepath.Join(dir, "mymod"), "jane/thing"} },
+			exitError, "both install to"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng, f, cdb := setupInstall(t)
+			writeFile(t, filepath.Join(eng.ModsDir, "have", "init.lua"), "")
+
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "mymod", "init.lua"), "")
+			writeFile(t, filepath.Join(dir, "mymod", "mod.conf"), "name = thing\n")
+			writeFile(t, filepath.Join(dir, "other", "init.lua"), "")
+			writeFile(t, filepath.Join(dir, "bad-name", "init.lua"), "")
+			writeFile(t, filepath.Join(dir, "have", "init.lua"), "")
+
+			// the valid package is not installed either, a run installs all or nothing
+			args := append([]string{"install", "-y", "jane/quest"}, tt.args(dir)...)
+			code, _, stderr := runWithCDB(t, eng, cdb, args...)
+			if code != tt.wantCode {
+				t.Errorf("code = %d, want %d", code, tt.wantCode)
+			}
+			if !strings.Contains(stderr, tt.want) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr, tt.want)
+			}
+			if got := f.downloaded(); got != "" {
+				t.Errorf("downloads = %q, want none", got)
+			}
+		})
+	}
+}
+
+func TestInstallMissingDepsExitOne(t *testing.T) {
+	eng, f, cdb := setupInstall(t)
+	src := filepath.Join(t.TempDir(), "mymod")
+	writeFile(t, filepath.Join(src, "init.lua"), "")
+	writeFile(t, filepath.Join(src, "mod.conf"), "name = mymod\ndepends = dupe, nothing, lib\n")
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "install", "-y", "-l", src)
+	if code != exitError {
+		t.Errorf("code = %d, want %d", code, exitError)
+	}
+	for _, want := range []string{
+		`dependency dupe for mymod is ambiguous, install it with "author/name"`,
+		"could not find dependency nothing for mymod",
+		"required dependencies still missing: dupe, nothing",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want it to contain %q", stderr, want)
+		}
+	}
+
+	// the rest still go ahead
+	if got := f.downloaded(); got != "lib" {
+		t.Errorf("downloads = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(eng.ModsDir, "mymod", "init.lua")); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestInstallLocalDryRun(t *testing.T) {
+	eng, f, cdb := setupInstall(t)
+	src := filepath.Join(t.TempDir(), "mymod")
+	writeFile(t, filepath.Join(src, "init.lua"), "")
+	writeFile(t, filepath.Join(src, "mod.conf"), "depends = lib\n")
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "install", "-n", "-l", src)
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	for _, want := range []string{"mymod", "from " + src, "Would install as dependencies:", "amy/lib"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout = %q, want it to contain %q", stdout, want)
+		}
+	}
+	if got := f.downloaded(); got != "" {
+		t.Errorf("downloads = %q, want none", got)
+	}
+	if _, err := os.Stat(filepath.Join(eng.ModsDir, "mymod")); !os.IsNotExist(err) {
+		t.Errorf("installed on a dry run: %v", err)
 	}
 }
