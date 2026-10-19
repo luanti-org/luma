@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -415,5 +417,70 @@ func TestDependencies(t *testing.T) {
 	}
 	if got.Get("only_hard") != "true" {
 		t.Errorf("onlyHard=true sent query %q, want only_hard=true", got.Encode())
+	}
+}
+
+func TestModProviders(t *testing.T) {
+	pages := map[string]string{
+		"1": `{"page_count": 3, "items": [
+			{"author": "jeija", "name": "mesecons", "provides": ["mesecons", "mesecons_mvps"]},
+			{"author": "bob", "name": "core", "provides": ["core"]}
+		]}`,
+		"2": `{"page_count": 3, "items": [
+			{"author": "bob", "name": "core", "provides": ["core"]},
+			{"author": "carol", "name": "mvps", "provides": ["mesecons_mvps"]}
+		]}`,
+		"3": `{"page_count": 3, "items": []}`,
+	}
+
+	var mu sync.Mutex
+	var queries []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		queries = append(queries, r.URL.Query())
+		mu.Unlock()
+		if r.URL.Path != "/api/dependencies/" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write([]byte(pages[r.URL.Query().Get("page")]))
+	}))
+	t.Cleanup(srv.Close)
+
+	providers, err := New(srv.URL).ModProviders()
+	if err != nil {
+		t.Fatalf("ModProviders: %v", err)
+	}
+
+	if len(queries) != 3 {
+		t.Fatalf("made %d requests, want 3", len(queries))
+	}
+	q := queries[0]
+	if q.Get("type") != "mod" || q.Get("sort") != "created_at" || q.Get("order") != "asc" || q.Get("n") != "300" {
+		t.Errorf("query = %q", q.Encode())
+	}
+
+	if got := providers["core"]; len(got) != 1 || got[0] != "bob/core" {
+		t.Errorf("core = %v, want only bob/core once", got)
+	}
+	got := providers["mesecons_mvps"]
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"carol/mvps", "jeija/mesecons"}) {
+		t.Errorf("mesecons_mvps = %v", got)
+	}
+}
+
+func TestModProvidersPageError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "2" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(`{"page_count": 2, "items": [{"author": "bob", "name": "core", "provides": ["core"]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	if _, err := New(srv.URL).ModProviders(); err == nil || !strings.Contains(err.Error(), "unexpected status 500") {
+		t.Errorf("err = %v, want the failed page's error", err)
 	}
 }

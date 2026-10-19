@@ -32,13 +32,16 @@ Results are written to standard output, errors and warnings to standard error.
 
 ## install
 
-Installs packages from ContentDB: mods, modpacks, games and texture packs. Each package is installed at its newest release compatible with the engine.
+Installs mods, modpacks, games and texture packs, from ContentDB or from local zips and folders. Each ContentDB package is installed at its newest release compatible with the engine.
 
     luma install mineclonia                  # install by package name
     luma install TenPlus1/protector          # install by author/name
     luma install animalia mobs_monster       # install several at once
     luma install -n animalia                 # show what would be installed
     luma install --game minetest_game animalia   # dependencies minetest_game provides are not installed
+    luma install -l ./mymod.zip              # install a local zip
+    luma install -l ./mymod -l ./other       # install local folders
+    luma install -l ./mineclonia-main --name mineclonia   # install into the folder mineclonia
 
 | flag | meaning |
 |---|---|
@@ -46,6 +49,8 @@ Installs packages from ContentDB: mods, modpacks, games and texture packs. Each 
 | `-y`, `--yes` | install dependencies without asking |
 | `--no-deps` | don't install the dependencies of mods |
 | `--game` | count this game's mods as installed when resolving dependencies |
+| `-l`, `--local` | install the zip or folder at this path, can be repeated |
+| `--name` | the folder name to install the one `--local` package into |
 
 ---
 
@@ -63,11 +68,23 @@ A package that is already installed is an error too. Use the `update` command of
 
 For a single command all intended installed packages must succeed. If any of them is not found, ambiguous or already installed, each problem is reported, nothing is installed, and luma exits with code 1.
 
-Mods and modpacks are installed with their hard dependencies: luma shows what it will install and asks whether to continue, `-y` skips the question, and when luma is not run from a terminal it stops with an error unless `-y` or `--no-deps` is given. Games and texture packs have no dependencies to install.
+Mods and modpacks are installed with their hard dependencies: luma shows what it will install and asks whether to continue, `-y` skips the question, and when luma is not run from a terminal it stops with an error unless `-y` or `--no-deps` is given. Games and texture packs have no dependencies to install. Dependencies are picked as for [mods update](#dependencies). A dependency that can't be found is reported, the rest are still installed, and luma then exits with code 1.
 
 As with the Luanti client, luma writes the package's `author` and `release` into its `mod.conf`, `modpack.conf`, `game.conf` or `texture_pack.conf`, so later updates can find it. For mods and texture packs the `name` is written too.
 
 If a download or install fails partway, the packages this run already installed are removed again, so nothing is changed, and luma exits with code 1.
+
+### Local packages
+
+`-l` takes the path to a zip or a folder. Names and `-l` can be mixed in one command. An argument that looks like a path, such as `./mymod.zip`, must be given with `-l`.
+
+If the zip or folder holds a single folder instead of the package itself, that folder is used, as the Luanti client does. The type comes from the files at the package root: `game.conf`, `texture_pack.conf`, `modpack.conf` or `modpack.txt`, or `init.lua` for a mod.
+
+The package is copied as it is, and luma writes nothing into it. Symlinks are not supported. A zip may unpack to at most 10,000 files and 500 MB.
+
+The folder it is installed into is named, in order, by `--name`, the `name` in its conf, the package's own folder, or the zip's file name. A game's folder name is its game ID, as `game.conf` has no `name`. The result must be a valid name, lowercase letters, digits and `_`, so a folder like `mineclonia-main` needs `--name`. `--name` only names the folder, the `name` in the conf still counts for the mod or texture pack itself.
+
+A local mod's dependencies come from its own `mod.conf`, or for a modpack, from those of its mods. If the conf's `author` and `name` match a ContentDB package, the dependencies of that package's newest release are used to find the packages that provide them. Otherwise a dependency is installed from the one ContentDB mod with its name. If several mods share that name, luma doesn't guess, and the dependency is reported as ambiguous.
 
 ## mods
 

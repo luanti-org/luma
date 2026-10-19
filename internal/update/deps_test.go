@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/luanti-org/luma/internal/content"
@@ -421,5 +422,80 @@ func TestInstallDep(t *testing.T) {
 	}
 	if len(requests) != 1 {
 		t.Errorf("requests = %v, want none for the refused installs", requests)
+	}
+}
+
+func TestResolveInstallDeps(t *testing.T) {
+	client, requested := newDepsServer(t, map[string]string{
+		// the published release, which needs "dropped" and doesn't know "newdep" yet
+		"jane/mymod": `{"jane/mymod": [
+			{"name": "inpack", "is_optional": false, "packages": ["amy/bigpack"]},
+			{"name": "dropped", "is_optional": false, "packages": ["amy/dropped"]}
+		]}`,
+		"amy/bigpack": `{"amy/bigpack": []}`,
+		"bob/newdep":  `{"bob/newdep": [{"name": "deeper", "is_optional": false, "packages": ["bob/deeper"]}]}`,
+		"bob/deeper":  `{"bob/deeper": []}`,
+	})
+
+	packages := index(
+		mod("jane", "mymod", 1), mod("amy", "bigpack", 2), mod("amy", "dropped", 3),
+		mod("bob", "newdep", 4), mod("bob", "deeper", 5),
+		mod("bob", "dupe", 6), mod("sam", "dupe", 7),
+		contentdb.Package{Author: "gm", Name: "nowhere", Type: "game", Release: 1},
+	)
+
+	locals := []LocalPackage{
+		{Type: "mod", Name: "mymod", Author: "jane", Mod: content.Mod{
+			Name: "mymod", HasInit: true, Depends: []string{"inpack", "newdep", "dupe", "have", "other", "nowhere"},
+		}},
+		// its author doesn't name a package in the index, so it isn't looked up
+		{Type: "mod", Name: "other", Author: "zed", Mod: content.Mod{Name: "other", HasInit: true, Depends: []string{"newdep"}}},
+		{Type: "game", Name: "agame"},
+	}
+
+	plan, err := ResolveInstallDeps(client, nil, locals, map[string]bool{"have": true}, packages)
+	if err != nil {
+		t.Fatalf("ResolveInstallDeps: %v", err)
+	}
+
+	if got, want := installIDs(plan), []string{"bob/newdep", "amy/bigpack", "bob/deeper"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("install = %v, want %v", got, want)
+	}
+	if plan.Install[0].RequiredBy != "mymod" {
+		t.Errorf("required by = %q, want the local mod name", plan.Install[0].RequiredBy)
+	}
+
+	got := make(map[string]bool)
+	for _, m := range plan.NotFound {
+		got[m.Dep] = m.Ambiguous
+	}
+	if want := map[string]bool{"dupe": true, "nowhere": false}; !reflect.DeepEqual(got, want) {
+		t.Errorf("not found (dep -> ambiguous) = %v, want %v", got, want)
+	}
+
+	if slices.Contains(*requested, "zed/other") {
+		t.Errorf("requested = %v, want no lookup for zed/other", *requested)
+	}
+}
+
+func TestResolveInstallDepsWithRoots(t *testing.T) {
+	client, _ := newDepsServer(t, map[string]string{
+		"jane/thing": `{"jane/thing": [{"name": "lib", "is_optional": false, "packages": ["amy/lib"]}]}`,
+		"amy/lib":    `{"amy/lib": []}`,
+	})
+	packages := index(mod("jane", "thing", 1), mod("amy", "lib", 2))
+
+	// both need lib, which is installed once
+	locals := []LocalPackage{{Type: "mod", Name: "mymod", Mod: content.Mod{Name: "mymod", HasInit: true, Depends: []string{"lib", "thing"}}}}
+
+	plan, err := ResolveInstallDeps(client, []string{"jane/thing"}, locals, map[string]bool{}, packages)
+	if err != nil {
+		t.Fatalf("ResolveInstallDeps: %v", err)
+	}
+	if got, want := installIDs(plan), []string{"amy/lib"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("install = %v, want %v", got, want)
+	}
+	if len(plan.NotFound) != 0 {
+		t.Errorf("not found = %+v", plan.NotFound)
 	}
 }

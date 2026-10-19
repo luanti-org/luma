@@ -68,6 +68,14 @@ func ScanMods(dir string) ([]Mod, error) {
 	return mods, nil
 }
 
+// ScanModDir scans the mod or modpack at path, named dir if its conf has no name.
+func ScanModDir(dir, path string) (Mod, error) {
+	if isModpackDir(path) {
+		return scanModpack(dir, path)
+	}
+	return scanModDir(dir, path), nil
+}
+
 // ProvidedModNames returns the names of all loadable mods in mods, modpack members included.
 func ProvidedModNames(mods []Mod) map[string]bool {
 	names := make(map[string]bool)

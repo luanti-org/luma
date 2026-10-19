@@ -87,7 +87,8 @@ var commands = map[string]noun{
 
 // topLevel holds the commands with no noun, for getting content of any type. Their names must not be nouns.
 var topLevel = map[string]verb{
-	"install": {"[-n] [-y] [--no-deps] [--game id] name|author/name...", "install ContentDB packages, with the dependencies of mods", install},
+	"install": {"[-n] [-y] [--no-deps] [--game id] [-l path]... [--name name] [name|author/name...]",
+		"install packages from ContentDB or local zips and folders, with the dependencies of mods", install},
 }
 
 // aliases maps alternative noun names to their entry in commands, help lists only the latter

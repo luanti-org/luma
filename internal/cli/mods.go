@@ -433,6 +433,8 @@ func (c *ctx) installDeps(installs []update.DepInstall) (failed int) {
 func (c *ctx) printNotFound(missing []update.MissingDep) {
 	for _, m := range missing {
 		switch {
+		case m.Ambiguous:
+			fmt.Fprintf(c.stderr, "luma: dependency %s for %s is ambiguous, install it with \"author/name\"\n", m.Dep, m.RequiredBy)
 		case !m.Excluded:
 			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s\n", m.Dep, m.RequiredBy)
 		case m.Package != "":
