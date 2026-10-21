@@ -342,18 +342,82 @@ func TestListDeps(t *testing.T) {
 	}
 }
 
-func TestLocalDeps(t *testing.T) {
-	m := content.Mod{Name: "solo", Depends: []string{"have", "lib"}, OptionalDepends: []string{"extra"}}
+func TestListLocalDeps(t *testing.T) {
+	client, requested := newDepsServer(t, map[string]string{
+		"providers": `{"page_count": 1, "items": [
+			{"author": "jeija", "name": "mesecons", "provides": ["mesecons", "mesecons_mvps"]},
+			{"author": "carol", "name": "extras", "provides": ["both"]},
+			{"author": "dan", "name": "more", "provides": ["both"]},
+			{"author": "gm", "name": "somegame", "provides": ["fromgame", "mesecons_mvps"]}
+		]}`,
+	})
 
-	got := LocalDeps(m, map[string]bool{"have": true})
+	packages := index(
+		contentdb.Package{Author: "gm", Name: "somegame", Type: "game", Release: 1},
+		mod("amy", "lib", 2), mod("jeija", "mesecons", 3), mod("carol", "extras", 4), mod("dan", "more", 5),
+	)
+	m := content.Mod{Name: "solo", Depends: []string{"have", "lib", "mesecons_mvps", "fromgame"},
+		OptionalDepends: []string{"both", "nowhere"}}
+
+	got, err := ListLocalDeps(client, m, map[string]bool{"have": true}, packages)
+	if err != nil {
+		t.Fatalf("ListLocalDeps: %v", err)
+	}
 
 	want := []ModDep{
 		{Dep: "have", RequiredBy: "solo", Installed: true},
-		{Dep: "lib", RequiredBy: "solo"},
-		{Dep: "extra", RequiredBy: "solo", Optional: true},
+		{Dep: "lib", RequiredBy: "solo", Available: true, Package: mod("amy", "lib", 2)},
+		{Dep: "mesecons_mvps", RequiredBy: "solo", Available: true, Package: mod("jeija", "mesecons", 3)},
+		{Dep: "fromgame", RequiredBy: "solo", GameOnly: true},
+		{Dep: "both", RequiredBy: "solo", Optional: true, Ambiguous: true},
+		{Dep: "nowhere", RequiredBy: "solo", Optional: true},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("deps = %+v, want %+v", got, want)
+	}
+	if slices.ContainsFunc(*requested, func(id string) bool { return id != "providers" }) {
+		t.Errorf("requested = %v, want only the providers", *requested)
+	}
+}
+
+func TestListLocalDepsOptionalNoRefetch(t *testing.T) {
+	client, requested := newDepsServer(t, nil)
+	m := content.Mod{Name: "solo", OptionalDepends: []string{"nowhere"}}
+
+	if _, err := ListLocalDeps(client, m, nil, nil); err != nil {
+		t.Fatalf("ListLocalDeps: %v", err)
+	}
+	ageCache(t, time.Hour)
+
+	if _, err := ListLocalDeps(client, m, nil, nil); err != nil {
+		t.Fatalf("second ListLocalDeps: %v", err)
+	}
+	if n := countOf(*requested, "providers"); n != 1 {
+		t.Errorf("providers fetched %d times, want 1 as a missing optional dep doesn't refetch", n)
+	}
+
+	m.Depends = []string{"nowhere_hard"}
+	if _, err := ListLocalDeps(client, m, nil, nil); err != nil {
+		t.Fatalf("third ListLocalDeps: %v", err)
+	}
+	if n := countOf(*requested, "providers"); n != 2 {
+		t.Errorf("providers fetched %d times in all, want 2 with one refetch for the missing hard dep", n)
+	}
+}
+
+func TestListLocalDepsNoProviderLookup(t *testing.T) {
+	client, requested := newDepsServer(t, nil)
+	m := content.Mod{Name: "solo", Depends: []string{"have", "lib"}}
+
+	got, err := ListLocalDeps(client, m, map[string]bool{"have": true}, index(mod("amy", "lib", 2)))
+	if err != nil {
+		t.Fatalf("ListLocalDeps: %v", err)
+	}
+	if len(got) != 2 || !got[1].Available {
+		t.Errorf("deps = %+v", got)
+	}
+	if len(*requested) != 0 {
+		t.Errorf("requested = %v, want nothing when every dep is installed or named like a package", *requested)
 	}
 }
 
@@ -523,7 +587,8 @@ func TestResolveInstallDepsProviders(t *testing.T) {
 			{"author": "carol", "name": "extras", "provides": ["twice", "both"]},
 			{"author": "dan", "name": "more", "provides": ["both"]},
 			{"author": "bob", "name": "dupe", "provides": ["dupe"]},
-			{"author": "gone", "name": "stale", "provides": ["stale"]}
+			{"author": "gone", "name": "stale", "provides": ["stale"]},
+			{"author": "gm", "name": "somegame", "provides": ["mesecons_mvps", "fromgame"]}
 		]}`,
 		"jeija/mesecons": `{"jeija/mesecons": []}`,
 		"amy/twice":      `{"amy/twice": []}`,
@@ -533,9 +598,10 @@ func TestResolveInstallDepsProviders(t *testing.T) {
 	packages := index(
 		mod("jeija", "mesecons", 1), mod("amy", "twice", 2), mod("carol", "extras", 3),
 		mod("dan", "more", 4), mod("bob", "dupe", 5), mod("sam", "dupe", 6),
+		contentdb.Package{Author: "gm", Name: "somegame", Type: "game", Release: 7},
 	)
 	locals := []LocalPackage{{Type: "mod", Name: "mymod", Mod: content.Mod{
-		Name: "mymod", HasInit: true, Depends: []string{"mesecons_mvps", "twice", "both", "dupe", "stale", "nothing"},
+		Name: "mymod", HasInit: true, Depends: []string{"mesecons_mvps", "twice", "both", "dupe", "stale", "nothing", "fromgame"},
 	}}}
 
 	plan, err := ResolveInstallDeps(client, nil, locals, map[string]bool{}, packages)
@@ -550,13 +616,14 @@ func TestResolveInstallDepsProviders(t *testing.T) {
 		t.Errorf("install = %v, want %v", got, want)
 	}
 
-	missing := make(map[string]bool)
+	missing := make(map[string]MissingDep)
 	for _, m := range plan.NotFound {
-		missing[m.Dep] = m.Ambiguous
+		missing[m.Dep] = MissingDep{Ambiguous: m.Ambiguous, GameOnly: m.GameOnly}
 	}
-	// stale's provider isn't in the index
-	if want := map[string]bool{"both": true, "stale": false, "nothing": false}; !reflect.DeepEqual(missing, want) {
-		t.Errorf("not found (dep -> ambiguous) = %v, want %v", missing, want)
+	// stale's provider isn't in the index, and a game providing mesecons_mvps doesn't make it ambiguous
+	want := map[string]MissingDep{"both": {Ambiguous: true}, "stale": {}, "nothing": {}, "fromgame": {GameOnly: true}}
+	if !reflect.DeepEqual(missing, want) {
+		t.Errorf("not found = %+v, want %+v", missing, want)
 	}
 
 	// still missing deps don't refetch a copy under 10 minutes old
@@ -564,17 +631,7 @@ func TestResolveInstallDepsProviders(t *testing.T) {
 		t.Errorf("providers fetched %d times, want 1", n)
 	}
 
-	cacheDir := os.Getenv("LUMA_CACHE_DIR")
-	entries, err := os.ReadDir(cacheDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().Add(-time.Hour)
-	for _, e := range entries {
-		if err := os.Chtimes(filepath.Join(cacheDir, e.Name()), old, old); err != nil {
-			t.Fatal(err)
-		}
-	}
+	ageCache(t, time.Hour)
 
 	if _, err := ResolveInstallDeps(client, nil, locals, map[string]bool{}, packages); err != nil {
 		t.Fatalf("second ResolveInstallDeps: %v", err)
@@ -596,6 +653,22 @@ func TestResolveInstallDepsNoProviderLookup(t *testing.T) {
 	}
 	if slices.Contains(*requested, "providers") {
 		t.Errorf("requested = %v, want no provider lookup when only optional deps are missing", *requested)
+	}
+}
+
+// ageCache makes every file in the test's cache folder age old.
+func ageCache(t *testing.T, age time.Duration) {
+	t.Helper()
+	cacheDir := os.Getenv("LUMA_CACHE_DIR")
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-age)
+	for _, e := range entries {
+		if err := os.Chtimes(filepath.Join(cacheDir, e.Name()), old, old); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

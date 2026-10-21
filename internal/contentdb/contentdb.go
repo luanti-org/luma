@@ -258,12 +258,12 @@ type modProvidersPage struct {
 // modProvidersFetches is how many pages ModProviders fetches at once
 const modProvidersFetches = 4
 
-// ModProviders fetches every page of GET /api/dependencies/?type=mod
-// and returns a map of mod name to the "author/name" packages that contain it, modpack members included.
+// ModProviders fetches every page of GET /api/dependencies/ for mods and games
+// and returns a map of mod name to the "author/name" packages that contain it, modpack and game members included.
 // A cached copy younger than maxAge is returned instead, a fresh fetch replaces it.
 func (c *Client) ModProviders(maxAge time.Duration) (map[string][]string, error) {
-	// bump the version when the cached shape changes
-	key := "mod-providers/v1 " + c.BaseURL
+	// bump the version when the cached shape or contents change
+	key := "mod-providers/v2 " + c.BaseURL
 	var providers map[string][]string
 	if cache.GetJSON(key, maxAge, &providers) {
 		return providers, nil
@@ -272,7 +272,7 @@ func (c *Client) ModProviders(maxAge time.Duration) (map[string][]string, error)
 	page := func(n int) (modProvidersPage, error) {
 		// oldest first, so a package added mid-fetch lands on the last page instead of shifting the rest
 		query := url.Values{
-			"type":  {"mod"},
+			"type":  {"mod", "game"},
 			"sort":  {"created_at"},
 			"order": {"asc"},
 			"n":     {"300"},

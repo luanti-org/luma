@@ -918,10 +918,9 @@ func TestModsListDepsNone(t *testing.T) {
 func TestModsListDepsLocal(t *testing.T) {
 	tests := []struct {
 		mod, reason string
-		requests    int
 	}{
-		{"local", "no author in mod.conf", 0},
-		{"orphan", "no compatible package on ContentDB", 1},
+		{"local", "no author in mod.conf"},
+		{"orphan", "no compatible package on ContentDB"},
 	}
 
 	for _, tt := range tests {
@@ -935,12 +934,77 @@ func TestModsListDepsLocal(t *testing.T) {
 			checkTable(t, stdout, [][]string{
 				{"DEP", "STATUS", "PACKAGE", "RELEASE"},
 				{"have", "installed", "-", "-"},
-				{"gone", "missing", "-", "-"},
+				{"gone", "not found", "-", "-"},
 			})
-			if f.listRequests != tt.requests {
-				t.Errorf("package list requested %d times, want %d", f.listRequests, tt.requests)
+			if f.listRequests != 1 {
+				t.Errorf("package list requested %d times, want 1", f.listRequests)
 			}
 		})
+	}
+}
+
+// setupLocalProviders adds solo, with no author, whose deps are found by name (lib), by provider (mesecons_mvps),
+// only in a game (base) and in two packages (twin).
+func setupLocalProviders(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
+	t.Helper()
+
+	eng, f, cdb := setupModDeps(t)
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
+	writeFile(t, filepath.Join(eng.ModsDir, "solo", "mod.conf"), "name = solo\ndepends = lib, mesecons_mvps, base, twin\n")
+	f.packagesJSON = `[
+		{"author": "amy", "name": "lib", "type": "mod", "release": 6},
+		{"author": "jeija", "name": "mesecons", "type": "mod", "release": 5},
+		{"author": "carol", "name": "extras", "type": "mod", "release": 4},
+		{"author": "dan", "name": "more", "type": "mod", "release": 3},
+		{"author": "gm", "name": "somegame", "type": "game", "release": 9}
+	]`
+	f.providersJSON = `{"page_count": 1, "items": [
+		{"author": "jeija", "name": "mesecons", "provides": ["mesecons", "mesecons_mvps"]},
+		{"author": "carol", "name": "extras", "provides": ["twin"]},
+		{"author": "dan", "name": "more", "provides": ["twin"]},
+		{"author": "gm", "name": "somegame", "provides": ["base"]}
+	]}`
+
+	return eng, f, cdb
+}
+
+func TestModsListDepsLocalProviders(t *testing.T) {
+	eng, _, cdb := setupLocalProviders(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "list-deps", "solo")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	checkTable(t, stdout, [][]string{
+		{"DEP", "STATUS", "PACKAGE", "RELEASE"},
+		{"lib", "available", "amy/lib", "6"},
+		{"mesecons_mvps", "available", "jeija/mesecons", "5"},
+		{"base", "from", "game", "-", "-"},
+		{"twin", "ambiguous", "-", "-"},
+	})
+}
+
+func TestModsInstallDepsLocalProviders(t *testing.T) {
+	eng, f, cdb := setupLocalProviders(t)
+
+	code, stdout, stderr := runWithCDB(t, eng, cdb, "mods", "install-deps", "-y", "solo")
+	if code != exitError {
+		t.Errorf("code = %d, want %d", code, exitError)
+	}
+	for _, want := range []string{
+		"could not find dependency base for solo, only games provide it, see --game",
+		`dependency twin for solo is ambiguous, install it with "author/name"`,
+		"required dependencies still missing: base, twin",
+	} {
+		if !strings.Contains(stderr, want) {
+			t.Errorf("stderr = %q, want %q in it", stderr, want)
+		}
+	}
+	if !strings.Contains(stdout, "amy/lib: installed 6 (dependency of solo)") {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if got := f.downloaded(); got != "lib,mesecons" {
+		t.Errorf("downloaded = %q, want lib,mesecons", got)
 	}
 }
 

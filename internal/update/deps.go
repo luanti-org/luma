@@ -40,11 +40,12 @@ type DepPlan struct {
 // ModDep is a dependency of RequiredBy and the package that would provide it.
 type ModDep struct {
 	Dep        string
-	RequiredBy string // "author/name", or the mod name from LocalDeps
+	RequiredBy string // "author/name", or the mod name from ListLocalDeps
 	Optional   bool
 	Installed  bool
 	Available  bool // Package is set
 	GameOnly   bool // no Package, but a game provides it
+	Ambiguous  bool // no Package, as several packages provide it and none was picked
 	Package    contentdb.Package
 }
 
@@ -100,7 +101,7 @@ func ResolveInstallDeps(client *contentdb.Client, roots []string, locals []Local
 		localDeps[i] = deps
 
 		for j := range deps {
-			if deps[j].Packages == nil && !all[deps[j].Name] {
+			if deps[j].Packages == nil && !deps[j].IsOptional && !all[deps[j].Name] {
 				unresolved = append(unresolved, &deps[j])
 			}
 		}
@@ -133,7 +134,7 @@ func ResolveInstallDeps(client *contentdb.Client, roots []string, locals []Local
 	return r.resolveRoots(slices.Concat(roots, localRoots))
 }
 
-// providerMaxAges are how old the cached mod providers may be, the second is tried once if a dep is still missing.
+// providerMaxAges are how old the cached mod providers may be, the second is tried once if a hard dep is still missing.
 var providerMaxAges = []time.Duration{24 * time.Hour, 10 * time.Minute}
 
 // addProviders fills in the packages of deps from the mod names every ContentDB mod provides,
@@ -141,9 +142,9 @@ var providerMaxAges = []time.Duration{24 * time.Hour, 10 * time.Minute}
 func addProviders(client *contentdb.Client, deps []*contentdb.Dependency,
 	packages map[string]contentdb.Package) (map[string]bool, error) {
 	ambiguous := make(map[string]bool)
-	for _, maxAge := range providerMaxAges {
+	for i, maxAge := range providerMaxAges {
 		missing := slices.DeleteFunc(slices.Clone(deps), func(d *contentdb.Dependency) bool {
-			return d.Packages != nil || ambiguous[d.Name]
+			return d.Packages != nil || ambiguous[d.Name] || (i > 0 && d.IsOptional)
 		})
 		if len(missing) == 0 {
 			break
@@ -155,12 +156,15 @@ func addProviders(client *contentdb.Client, deps []*contentdb.Dependency,
 		}
 
 		for _, d := range missing {
-			id, several := pickProvider(d.Name, providers[d.Name], packages)
-			if id != "" {
+			id, several, games := pickProvider(d.Name, providers[d.Name], packages)
+			switch {
+			case id != "":
 				d.Packages = []string{id}
-			}
-			if several {
+			case several:
 				ambiguous[d.Name] = true
+			case len(games) > 0:
+				// never picked, but marks the dep as game-only rather than not found
+				d.Packages = games
 			}
 		}
 	}
@@ -174,14 +178,18 @@ func addProviders(client *contentdb.Client, deps []*contentdb.Dependency,
 	return ambiguous, nil
 }
 
-// pickProvider returns the one provider of dep in the index, or the one named like dep among several.
-// several is true when more than one is left to choose from.
-func pickProvider(dep string, ids []string, packages map[string]contentdb.Package) (id string, several bool) {
+// pickProvider returns the one non-game provider of dep in the index, or the one named like dep among several.
+// several is true when more than one is left to choose from, games are the game providers in the index.
+func pickProvider(dep string, ids []string, packages map[string]contentdb.Package) (id string, several bool, games []string) {
 	var usable, named []string
 	for _, id := range ids {
 		// a stale provider may have gone, or have no compatible release
 		pkg, ok := packages[packageKey(id)]
 		if !ok {
+			continue
+		}
+		if pkg.Type == "game" {
+			games = append(games, id)
 			continue
 		}
 		usable = append(usable, id)
@@ -192,11 +200,11 @@ func pickProvider(dep string, ids []string, packages map[string]contentdb.Packag
 
 	switch {
 	case len(usable) == 1:
-		return usable[0], false
+		return usable[0], false, games
 	case len(named) == 1:
-		return named[0], false
+		return named[0], false, games
 	}
-	return "", len(usable) > 1
+	return "", len(usable) > 1, games
 }
 
 // modsNamed returns the mod packages named name, which a dependency of that name likely means.
@@ -210,7 +218,7 @@ func modsNamed(packages map[string]contentdb.Package, name string) []contentdb.P
 	return out
 }
 
-// localDependencies returns the hard dependencies in p's conf files with the packages that provide them.
+// localDependencies returns the dependencies in p's conf files with the packages that provide them.
 func localDependencies(client *contentdb.Client, p LocalPackage, packages map[string]contentdb.Package) ([]contentdb.Dependency, error) {
 	providers := make(map[string][]string)
 
@@ -230,11 +238,11 @@ func localDependencies(client *contentdb.Client, p LocalPackage, packages map[st
 		}
 	}
 
-	hard, _ := p.Mod.Deps()
-	out := make([]contentdb.Dependency, len(hard))
+	hard, optional := p.Mod.Deps()
+	out := make([]contentdb.Dependency, len(hard)+len(optional))
 
-	for i, name := range hard {
-		out[i] = contentdb.Dependency{Name: name, Packages: providers[name]}
+	for i, name := range slices.Concat(hard, optional) {
+		out[i] = contentdb.Dependency{Name: name, IsOptional: i >= len(hard), Packages: providers[name]}
 		if out[i].Packages != nil {
 			continue
 		}
@@ -317,20 +325,39 @@ func ListDeps(client *contentdb.Client, id string, installed map[string]bool,
 	return out, nil
 }
 
-// LocalDeps lists the dependencies in m's mod.conf, or its members' for a modpack, for mods ContentDB can't look up.
-// No package is looked up, so none are Available.
-func LocalDeps(m content.Mod, installed map[string]bool) []ModDep {
-	hard, optional := m.Deps()
-	var out []ModDep
-
-	for _, d := range hard {
-		out = append(out, ModDep{Dep: d, RequiredBy: m.Name, Installed: installed[d]})
-	}
-	for _, d := range optional {
-		out = append(out, ModDep{Dep: d, RequiredBy: m.Name, Optional: true, Installed: installed[d]})
+// ListLocalDeps lists the hard and optional dependencies in m's conf files, or its members' for a modpack,
+// for mods ContentDB can't look up. Their packages are found as for a local mod in ResolveInstallDeps.
+func ListLocalDeps(client *contentdb.Client, m content.Mod, installed map[string]bool,
+	packages map[string]contentdb.Package) ([]ModDep, error) {
+	deps, err := localDependencies(client, LocalPackage{Type: "mod", Name: m.Name, Author: m.Author, Mod: m}, packages)
+	if err != nil {
+		return nil, err
 	}
 
-	return out
+	var unresolved []*contentdb.Dependency
+	for i := range deps {
+		if deps[i].Packages == nil && !installed[deps[i].Name] {
+			unresolved = append(unresolved, &deps[i])
+		}
+	}
+
+	ambiguous, err := addProviders(client, unresolved, packages)
+	if err != nil {
+		return nil, err
+	}
+
+	r := &depResolver{packages: packages}
+	out := make([]ModDep, len(deps))
+
+	for i, dep := range deps {
+		o := ModDep{Dep: dep.Name, RequiredBy: m.Name, Optional: dep.IsOptional, Installed: installed[dep.Name]}
+		o.Package, o.Available = r.candidate(dep, true)
+		o.GameOnly = !o.Available && providedByGame(dep, packages)
+		o.Ambiguous = !o.Available && ambiguous[dep.Name]
+		out[i] = o
+	}
+
+	return out, nil
 }
 
 func providedByGame(dep contentdb.Dependency, packages map[string]contentdb.Package) bool {

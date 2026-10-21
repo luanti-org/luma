@@ -458,7 +458,7 @@ func TestModProviders(t *testing.T) {
 		t.Fatalf("made %d requests, want 3", len(queries))
 	}
 	q := queries[0]
-	if q.Get("type") != "mod" || q.Get("sort") != "created_at" || q.Get("order") != "asc" || q.Get("n") != "300" {
+	if !slices.Equal(q["type"], []string{"mod", "game"}) || q.Get("sort") != "created_at" || q.Get("order") != "asc" || q.Get("n") != "300" {
 		t.Errorf("query = %q", q.Encode())
 	}
 

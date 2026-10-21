@@ -250,10 +250,10 @@ func modsListDeps(c *ctx, args []string) int {
 		switch {
 		case d.Installed:
 			fmt.Fprintf(tw, "%s\tinstalled\t-\t-\n", d.Dep)
-		case l.local:
-			fmt.Fprintf(tw, "%s\tmissing\t-\t-\n", d.Dep)
 		case d.Available:
 			fmt.Fprintf(tw, "%s\tavailable\t%s/%s\t%d\n", d.Dep, d.Package.Author, d.Package.Name, d.Package.Release)
+		case d.Ambiguous:
+			fmt.Fprintf(tw, "%s\tambiguous\t-\t-\n", d.Dep)
 		case d.GameOnly:
 			fmt.Fprintf(tw, "%s\tfrom game\t-\t-\n", d.Dep)
 		default:
@@ -289,10 +289,13 @@ func modsInstallDeps(c *ctx, args []string) int {
 	for _, d := range l.deps {
 		switch {
 		case d.Installed:
-		case !l.local && d.Available:
+		case d.Available:
 			picks = append(picks, d)
 		case *optional:
 			// optional ones that can't be installed don't leave the mod broken
+		case d.Ambiguous:
+			missing = append(missing, d.Dep)
+			fmt.Fprintf(c.stderr, "luma: dependency %s for %s is ambiguous, install it with \"author/name\"\n", d.Dep, d.RequiredBy)
 		case d.GameOnly:
 			missing = append(missing, d.Dep)
 			fmt.Fprintf(c.stderr, "luma: could not find dependency %s for %s, only games provide it, see --game\n", d.Dep, d.RequiredBy)
@@ -354,7 +357,6 @@ type depList struct {
 	deps     []update.ModDep
 	provided map[string]bool
 	index    map[string]contentdb.Package
-	local    bool // listed from mod.conf, so no dependency has a package
 }
 
 // modDeps lists the required or optional dependencies of the installed mod name.
@@ -377,32 +379,29 @@ func (c *ctx) modDeps(name, gameID string, optional bool) (l depList, ok bool) {
 		return depList{}, false
 	}
 
-	if m.Author == "" {
+	var err error
+	l.index, err = c.packageIndex()
+	if err != nil {
+		c.err("%v", err)
+		return depList{}, false
+	}
+
+	_, found := l.index[strings.ToLower(m.Author+"/"+m.Name)]
+	switch {
+	case m.Author == "":
 		c.listedLocally(m, "no author in "+m.ConfName())
-		l.local = true
-	} else {
-		var err error
-		l.index, err = c.packageIndex()
-		if err != nil {
-			c.err("%v", err)
-			return depList{}, false
-		}
-
-		if _, found := l.index[strings.ToLower(m.Author+"/"+m.Name)]; found {
-			l.deps, err = update.ListDeps(c.cdb, m.Author+"/"+m.Name, l.provided, l.index)
-			if err != nil {
-				c.err("%v", err)
-				return depList{}, false
-			}
-		} else {
-			c.listedLocally(m, "no compatible package on ContentDB")
-			l.local = true
-		}
+		l.deps, err = update.ListLocalDeps(c.cdb, m, l.provided, l.index)
+	case !found:
+		c.listedLocally(m, "no compatible package on ContentDB")
+		l.deps, err = update.ListLocalDeps(c.cdb, m, l.provided, l.index)
+	default:
+		l.deps, err = update.ListDeps(c.cdb, m.Author+"/"+m.Name, l.provided, l.index)
+	}
+	if err != nil {
+		c.err("%v", err)
+		return depList{}, false
 	}
 
-	if l.local {
-		l.deps = update.LocalDeps(m, l.provided)
-	}
 	l.deps = slices.DeleteFunc(l.deps, func(d update.ModDep) bool { return d.Optional != optional })
 
 	return l, true

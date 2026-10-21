@@ -19,17 +19,15 @@ The main menu shows the folders and engine version in use, and leads to the mods
 | `q` | quit |
 | `ctrl+c` | quit immediately |
 
-`q` is ignored while certain operations are happening to avoid leaving directories in an invalid state.
+`q` is ignored during some operations, so folders aren't left half-changed.
 
 ## Mods
 
-The mods screen lists the installed mods and modpacks. Above the list are three actions:
+The mods screen lists the installed mods and modpacks, below three actions:
 
-* **Check for updates** asks ContentDB which installed mods have a newer release
+* **Check for updates** asks ContentDB which mods have a newer release
 * **Update all** updates every mod found by the last check
 * **Base game for dependencies** picks the game the mods are used with
-
-Mods in the list are tagged:
 
 | tag | meaning |
 |---|---|
@@ -38,41 +36,40 @@ Mods in the list are tagged:
 
 Press `u` on a mod tagged `[U]` to update only that one. Updating replaces the mod's folder with the new release.
 
+Never available for update:
+
+* mods with no author in their `mod.conf` (or `modpack.conf`), as they can't be matched to a ContentDB package
+* git checkouts (a `.git` inside) with no `release` in their `mod.conf`, as updating would replace the working copy
+
 ### Dependencies when updating
 
-Before updating, luma asks ContentDB which mods the new releases depend on. Only hard dependencies are considered. If all of them are already installed, the update starts right away.
+Before updating, luma asks ContentDB which mods the new releases depend on, hard dependencies only. If all are installed, the update starts right away. Otherwise a confirmation screen lists:
 
-Otherwise a confirmation screen lists:
-
-* the packages that would be installed, with the mod each one provides and what needs it
-* the dependencies no ContentDB package could be found for
+* the packages to install, with the mod each provides and what needs it
+* the dependencies no ContentDB package was found for
 * the mods to update
 
-**Install missing dependencies** is checked by default. Uncheck it to update without installing anything new. **Continue** starts the update, and **Cancel** or `esc` goes back with nothing changed.
+**Install missing dependencies** is checked by default, uncheck it to update without installing anything new. **Continue** starts the update, **Cancel** or `esc` goes back with nothing changed.
 
-If the dependencies cannot be looked up, for example because ContentDB is unreachable, the screen shows the error and offers **Update without dependencies** instead.
+If the dependencies can't be looked up, for example because ContentDB is unreachable, the screen shows the error and offers **Update without dependencies** instead.
 
 Dependencies are installed first, then the mods are updated. A dependency never replaces a folder that already exists in the mods folder.
 
 ### Base game
 
-Many mods depend on mods that are part of a game, such as `default` in Minetest Game. Select **Base game for dependencies** to choose from the installed games. The mods of the chosen game then count as installed, so they are neither installed again nor listed as not found.
+Many mods depend on mods that are part of a game, such as `default` in Minetest Game. **Base game for dependencies** picks one of the installed games, whose mods then count as installed, so they are neither installed again nor listed as not found.
 
-With `<None>`, only the mods folder is considered. The choice lasts until luma is closed.
-
-Mods with no author in their `mod.conf` (or `modpack.conf`) can't be matched to a ContentDB package, so they are never available for update.
-
-A mod whose folder is a git checkout (it has a `.git` inside) and has no `release` in its `mod.conf` is never available for update either, since updating would replace the working copy.
+With `<None>`, only the mods folder counts. The choice lasts until luma is closed.
 
 ### Mod details
 
-Select a mod to see its title, author, description, folder, path and the dependencies listed in its `mod.conf`. For a modpack, its mods are listed instead, and selecting one shows its details. A mod tagged `[!]` has no valid `mod.conf`, and its name is guessed from the folder name.
+Selecting a mod shows its title, author, description, folder, path and the dependencies in its `mod.conf`. A modpack lists its mods instead, and selecting one shows its details. A mod tagged `[!]` has no valid `mod.conf`, and its name is guessed from the folder name.
 
 Press `d` to open the dependencies screen of the mod or modpack.
 
 ### Dependencies screen
 
-The dependencies screen lists the required dependencies of a mod, then the optional ones, as ContentDB gives them for its latest release. Each has a status:
+Lists the required dependencies of a mod, then the optional ones, as ContentDB gives them for its latest release, each with a status:
 
 | status | meaning |
 |---|---|
@@ -80,31 +77,31 @@ The dependencies screen lists the required dependencies of a mod, then the optio
 | `available` | not installed, the package shown would provide it |
 | `from game` | not installed, only games on ContentDB provide it |
 | `not found` | no package compatible with the engine provides it |
-| `missing` | not installed, and not looked up on ContentDB (see below) |
+| `ambiguous` | not installed, several packages provide it and none was picked (see below) |
 
-The mods of the [base game](#base-game) count as installed. When a dependency is `from game`, a hint at the bottom points to that setting.
+The mods of the [base game](#base-game) count as installed. A hint at the bottom explains `from game` and `ambiguous` when they show.
 
-`available` dependencies have a checkbox. Missing required ones start checked, optional ones unchecked, and `enter` or `space` toggles one. **Install selected** installs the checked ones, along with their own required dependencies. If that pulls in more packages than the checked ones, or some of their dependencies can't be found, the confirmation screen from [updating](#dependencies-when-updating) lists everything first. Otherwise the install starts right away.
+* `available` dependencies have a checkbox, required ones start checked and optional ones unchecked. `enter` or `space` toggles one
+* **Install selected** installs the checked ones with their own required dependencies
+* if that pulls in more packages, or some of their dependencies can't be found, the confirmation screen from [updating](#dependencies-when-updating) lists everything first. Otherwise the install starts right away
+* when done, the list is refreshed, and the screen shows how many were installed and why any failed
+* as when updating, a dependency never replaces a folder that already exists in the mods folder
 
-When the install is done, the list is refreshed, and the screen shows how many packages were installed and the reason for each failure. As when updating, a dependency never replaces a folder that already exists in the mods folder.
-
-A mod with no author in its `mod.conf`, or with no compatible package on ContentDB, can't be looked up. Its dependencies are then listed from its `mod.conf`, or for a modpack from those of its mods, leaving out mods the pack provides itself. The screen says which case applies. Dependencies that are not installed show as `missing`, and nothing can be installed from the screen.
+A mod with no author in its `mod.conf`, or with no compatible package on ContentDB, can't be looked up itself. Its dependencies are then listed from its `mod.conf`, or for a modpack from those of its mods, leaving out mods the pack provides itself, and the screen says which case applies. Their packages are found as for a [local package](../cli#local-packages) on the command line, and only such a dependency can be `ambiguous`. The first time, this fetches a list of every mod and game on ContentDB, which takes a while.
 
 ## Games
 
-The games screen lists the installed games. Above the list are two actions:
+The games screen lists the installed games, below two actions:
 
-* **Check for updates** asks ContentDB which installed games have a newer release
+* **Check for updates** asks ContentDB which games have a newer release
 * **Update all** updates every game found by the last check
-
-Games in the list are tagged:
 
 | tag | meaning |
 |---|---|
 | `[U]` | update available |
 | `[!]` | no valid `game.conf`, title guessed from the folder name |
 
-Press `u` on a game tagged `[U]` to update only that one. Updating replaces the game's folder with the new release, without asking for confirmation.
+Press `u` on a game tagged `[U]` to update only that one. Updating replaces the game's folder with the new release, without asking.
 
 Games with no author or release in their `game.conf` can't be matched to a ContentDB package, so they are never available for update. The exception is a Minetest Game without a release, as bundled with engines up to 5.8, unless it is a git checkout.
 
@@ -112,18 +109,16 @@ Only one check or update runs at a time, across mods, games and texture packs.
 
 ## Texture packs
 
-The texture packs screen lists the installed texture packs. Above the list are two actions:
+The texture packs screen lists the installed texture packs, below two actions:
 
-* **Check for updates** asks ContentDB which installed texture packs have a newer release
+* **Check for updates** asks ContentDB which texture packs have a newer release
 * **Update all** updates every texture pack found by the last check
-
-Texture packs in the list are tagged:
 
 | tag | meaning |
 |---|---|
 | `[U]` | update available |
 | `[!]` | no valid `texture_pack.conf`, name guessed from the folder name |
 
-Press `u` on a texture pack tagged `[U]` to update only that one. Updating replaces the texture pack's folder with the new release, without asking for confirmation.
+Press `u` on a texture pack tagged `[U]` to update only that one. Updating replaces the texture pack's folder with the new release, without asking.
 
 Texture packs with no author or release in their `texture_pack.conf` can't be matched to a ContentDB package, so they are never available for update.

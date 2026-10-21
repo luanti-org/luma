@@ -50,6 +50,7 @@ func (m model) openModDeps(mod content.Mod) (tea.Model, tea.Cmd) {
 }
 
 // listModDepsCmd lists mod's dependencies from ContentDB, or from its mod.conf when ContentDB can't have it.
+// Those from mod.conf still get their packages from ContentDB.
 func (m model) listModDepsCmd(mod content.Mod) tea.Cmd {
 	client := m.cdb
 	engInfo := m.engInfo
@@ -62,10 +63,6 @@ func (m model) listModDepsCmd(mod content.Mod) tea.Cmd {
 			return modDepsListedMsg{path: mod.Path, err: err}
 		}
 
-		if mod.Author == "" {
-			return modDepsListedMsg{path: mod.Path, deps: update.LocalDeps(mod, installed), local: true}
-		}
-
 		if index == nil {
 			index, err = update.FetchPackageIndex(client, engInfo)
 			if err != nil {
@@ -74,8 +71,9 @@ func (m model) listModDepsCmd(mod content.Mod) tea.Cmd {
 		}
 
 		// index keys are lowercase, and a package missing there would only 404
-		if _, ok := index[strings.ToLower(mod.Author+"/"+mod.Name)]; !ok {
-			return modDepsListedMsg{path: mod.Path, index: index, deps: update.LocalDeps(mod, installed), local: true}
+		if _, ok := index[strings.ToLower(mod.Author+"/"+mod.Name)]; mod.Author == "" || !ok {
+			deps, err := update.ListLocalDeps(client, mod, installed, index)
+			return modDepsListedMsg{path: mod.Path, index: index, deps: deps, local: true, err: err}
 		}
 
 		deps, err := update.ListDeps(client, mod.Author+"/"+mod.Name, installed, index)
@@ -124,7 +122,11 @@ func (m model) planModDepsCmd(picks []update.ModDep) tea.Cmd {
 	engInfo := m.engInfo
 	index := m.packageIndex
 	game := m.modsGame
+	// as RequiredBy names it, see update.ModDep
 	root := m.depsMod.Author + "/" + m.depsMod.Name
+	if m.depsLocal {
+		root = m.depsMod.Name
+	}
 
 	return func() tea.Msg {
 		installed, err := installedModNames(engInfo, game)
@@ -255,15 +257,15 @@ func (m model) updateModDeps(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// depStatus is d's status column, local when listed from mod.conf and so never looked up.
-func depStatus(d update.ModDep, local bool) string {
+// depStatus is d's status column.
+func depStatus(d update.ModDep) string {
 	switch {
 	case d.Installed:
 		return "installed"
-	case local:
-		return "missing"
 	case d.Available:
 		return "available"
+	case d.Ambiguous:
+		return "ambiguous"
 	case d.GameOnly:
 		return "from game"
 	default:
@@ -321,8 +323,8 @@ func depStatusStyle(status string) *lipgloss.Style {
 		return &util.AvailableStyle
 	case "not found", "from game":
 		return &util.MutedStyle
-	case "missing":
-		return &util.ErrorStyle
+	case "ambiguous":
+		return &util.WarnStyle
 	default:
 		return nil
 	}
@@ -364,10 +366,11 @@ func (m model) viewModDeps() string {
 	}
 
 	nameWidth := 0
-	gameOnly := false
+	gameOnly, ambiguous := false, false
 	for _, d := range m.deps {
 		nameWidth = max(nameWidth, len(d.Dep))
 		gameOnly = gameOnly || (!d.Installed && d.GameOnly)
+		ambiguous = ambiguous || (!d.Installed && d.Ambiguous)
 	}
 
 	var lines []string
@@ -402,7 +405,7 @@ func (m model) viewModDeps() string {
 			pkg = fmt.Sprintf("%s/%s %d", d.Package.Author, d.Package.Name, d.Package.Release)
 		}
 
-		status := depStatus(d, local)
+		status := depStatus(d)
 		statuses[len(lines)] = status
 		line := fmt.Sprintf("%s %s %-*s  %-9s  %s", cursor, box, nameWidth, d.Dep, status, pkg)
 		lines = append(lines, strings.TrimRight(line, " "))
@@ -427,6 +430,9 @@ func (m model) viewModDeps() string {
 
 	chrome := 7 + len(below)
 	if gameOnly {
+		chrome++
+	}
+	if ambiguous {
 		chrome++
 	}
 	rows := m.listRows(chrome)
@@ -455,6 +461,9 @@ func (m model) viewModDeps() string {
 	s += "\n"
 	if gameOnly {
 		s += "(from game: set the base game on the mods screen)\n"
+	}
+	if ambiguous {
+		s += "(ambiguous: several packages provide it, install one manually)\n"
 	}
 	s += help
 
