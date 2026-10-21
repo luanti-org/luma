@@ -421,6 +421,7 @@ func TestDependencies(t *testing.T) {
 }
 
 func TestModProviders(t *testing.T) {
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
 	pages := map[string]string{
 		"1": `{"page_count": 3, "items": [
 			{"author": "jeija", "name": "mesecons", "provides": ["mesecons", "mesecons_mvps"]},
@@ -447,7 +448,8 @@ func TestModProviders(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	providers, err := New(srv.URL).ModProviders()
+	c := New(srv.URL)
+	providers, err := c.ModProviders(time.Hour)
 	if err != nil {
 		t.Fatalf("ModProviders: %v", err)
 	}
@@ -468,11 +470,25 @@ func TestModProviders(t *testing.T) {
 	if !slices.Equal(got, []string{"carol/mvps", "jeija/mesecons"}) {
 		t.Errorf("mesecons_mvps = %v", got)
 	}
+
+	cached, err := c.ModProviders(time.Hour)
+	if err != nil || len(queries) != 3 {
+		t.Fatalf("cached call: %v, made %d requests in all, want still 3", err, len(queries))
+	}
+	if !slices.Equal(cached["core"], providers["core"]) {
+		t.Errorf("cached core = %v", cached["core"])
+	}
+
+	if _, err := c.ModProviders(0); err != nil || len(queries) != 6 {
+		t.Errorf("maxAge 0: %v, made %d requests in all, want 6", err, len(queries))
+	}
 }
 
 func TestModProvidersPageError(t *testing.T) {
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
+	failing := true
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("page") == "2" {
+		if failing && r.URL.Query().Get("page") == "2" {
 			http.Error(w, "boom", http.StatusInternalServerError)
 			return
 		}
@@ -480,7 +496,13 @@ func TestModProvidersPageError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	if _, err := New(srv.URL).ModProviders(); err == nil || !strings.Contains(err.Error(), "unexpected status 500") {
+	c := New(srv.URL)
+	if _, err := c.ModProviders(time.Hour); err == nil || !strings.Contains(err.Error(), "unexpected status 500") {
 		t.Errorf("err = %v, want the failed page's error", err)
+	}
+
+	failing = false
+	if providers, err := c.ModProviders(time.Hour); err != nil || len(providers["core"]) != 1 {
+		t.Errorf("after the error: %v, %v, want a fetch since nothing was cached", providers, err)
 	}
 }

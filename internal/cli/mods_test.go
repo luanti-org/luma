@@ -19,12 +19,13 @@ import (
 // fakeCDB serves /api/updates/, the package list, dependencies and release zips,
 // recording which mods were downloaded.
 type fakeCDB struct {
-	updatesJSON  string
-	updatesFail  bool
-	failFor      map[string]bool
-	packagesJSON string            // empty serves no packages
-	depsJSON     map[string]string // by "author/name", missing serves no dependencies
-	details      map[string]bool   // "author/name" packages whose details are served, others 404
+	updatesJSON   string
+	updatesFail   bool
+	failFor       map[string]bool
+	packagesJSON  string            // empty serves no packages
+	depsJSON      map[string]string // by "author/name", missing serves no dependencies
+	details       map[string]bool   // "author/name" packages whose details are served, others 404
+	providersJSON string            // GET /api/dependencies/, empty serves no packages
 
 	mu           sync.Mutex
 	downloads    []string
@@ -38,6 +39,15 @@ func (f *fakeCDB) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write([]byte(f.updatesJSON))
+		return
+	}
+
+	if r.URL.Path == "/api/dependencies/" {
+		if f.providersJSON == "" {
+			w.Write([]byte(`{"page_count": 1, "items": []}`))
+			return
+		}
+		w.Write([]byte(f.providersJSON))
 		return
 	}
 
