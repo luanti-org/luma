@@ -27,6 +27,7 @@ const installPackagesJSON = `[
 // where jane/thing depends on lib.
 func setupInstall(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
 	t.Helper()
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
 
 	dir := t.TempDir()
 	eng := engine.Info{

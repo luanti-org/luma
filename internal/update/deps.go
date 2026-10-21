@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
@@ -25,7 +26,7 @@ type MissingDep struct {
 	Dep        string
 	RequiredBy string // "author/name"
 	Excluded   bool   // skipped on request rather than not found
-	Ambiguous  bool   // several packages are named Dep and none was picked
+	Ambiguous  bool   // several packages are named Dep or provide it, and none was picked
 	Package    string // "author/name" that was excluded, empty if excluded by Dep
 }
 
@@ -84,10 +85,9 @@ func ResolveInstallDeps(client *contentdb.Client, roots []string, locals []Local
 		}
 	}
 
-	r := newDepResolver(client, all, packages, nil)
-	var localRoots []string
-
-	for _, p := range locals {
+	localDeps := make([][]contentdb.Dependency, len(locals))
+	var unresolved []*contentdb.Dependency
+	for i, p := range locals {
 		if p.Type != "mod" {
 			continue
 		}
@@ -96,19 +96,106 @@ func ResolveInstallDeps(client *contentdb.Client, roots []string, locals []Local
 		if err != nil {
 			return DepPlan{}, err
 		}
+		localDeps[i] = deps
+
+		for j := range deps {
+			if deps[j].Packages == nil && !all[deps[j].Name] {
+				unresolved = append(unresolved, &deps[j])
+			}
+		}
+	}
+
+	ambiguous, err := addProviders(client, unresolved, packages)
+	if err != nil {
+		return DepPlan{}, err
+	}
+
+	r := newDepResolver(client, all, packages, nil)
+	var localRoots []string
+
+	for i, p := range locals {
+		if p.Type != "mod" {
+			continue
+		}
 
 		// a local root has no "/", so its key can't match a ContentDB package
-		r.raw[packageKey(p.Name)] = deps
+		r.raw[packageKey(p.Name)] = localDeps[i]
 		localRoots = append(localRoots, p.Name)
 
-		for _, d := range deps {
-			if d.Packages == nil && !all[d.Name] && len(modsNamed(packages, d.Name)) > 1 && !r.seen[d.Name] {
+		for _, d := range localDeps[i] {
+			if d.Packages == nil && ambiguous[d.Name] && !r.seen[d.Name] {
 				r.miss(MissingDep{Dep: d.Name, RequiredBy: p.Name, Ambiguous: true})
 			}
 		}
 	}
 
 	return r.resolveRoots(slices.Concat(roots, localRoots))
+}
+
+// providerMaxAges are how old the cached mod providers may be, the second is tried once if a dep is still missing.
+var providerMaxAges = []time.Duration{24 * time.Hour, 10 * time.Minute}
+
+// addProviders fills in the packages of deps from the mod names every ContentDB mod provides,
+// and returns the names that several packages provide with none picked.
+func addProviders(client *contentdb.Client, deps []*contentdb.Dependency,
+	packages map[string]contentdb.Package) (map[string]bool, error) {
+	ambiguous := make(map[string]bool)
+	for _, maxAge := range providerMaxAges {
+		missing := slices.DeleteFunc(slices.Clone(deps), func(d *contentdb.Dependency) bool {
+			return d.Packages != nil || ambiguous[d.Name]
+		})
+		if len(missing) == 0 {
+			break
+		}
+
+		providers, err := client.ModProviders(maxAge)
+		if err != nil {
+			return nil, fmt.Errorf("fetching mod providers: %w", err)
+		}
+
+		for _, d := range missing {
+			id, several := pickProvider(d.Name, providers[d.Name], packages)
+			if id != "" {
+				d.Packages = []string{id}
+			}
+			if several {
+				ambiguous[d.Name] = true
+			}
+		}
+	}
+
+	for _, d := range deps {
+		if d.Packages == nil && len(modsNamed(packages, d.Name)) > 1 {
+			ambiguous[d.Name] = true
+		}
+	}
+
+	return ambiguous, nil
+}
+
+// pickProvider returns the one provider of dep in the index, or the one named like dep among several.
+// several is true when more than one is left to choose from.
+func pickProvider(dep string, ids []string, packages map[string]contentdb.Package) (id string, several bool) {
+	var usable, named []string
+	for _, id := range ids {
+		// a stale provider may have gone, or have no compatible release
+		pkg, ok := packages[packageKey(id)]
+		if !ok {
+			continue
+		}
+		usable = append(usable, id)
+		if pkg.Name == dep {
+			named = append(named, id)
+		}
+	}
+
+	switch {
+	case len(usable) == 1:
+		return usable[0], false
+	case len(named) == 1:
+		return named[0], false
+	}
+	return "", len(usable) > 1
 }
 
 // modsNamed returns the mod packages named name, which a dependency of that name likely means.

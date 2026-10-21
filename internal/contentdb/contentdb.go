@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/luanti-org/luma/internal/cache"
 	"github.com/luanti-org/luma/internal/version"
 )
 
@@ -259,7 +260,15 @@ const modProvidersFetches = 4
 
 // ModProviders fetches every page of GET /api/dependencies/?type=mod
 // and returns a map of mod name to the "author/name" packages that contain it, modpack members included.
-func (c *Client) ModProviders() (map[string][]string, error) {
+// A cached copy younger than maxAge is returned instead, a fresh fetch replaces it.
+func (c *Client) ModProviders(maxAge time.Duration) (map[string][]string, error) {
+	// bump the version when the cached shape changes
+	key := "mod-providers/v1 " + c.BaseURL
+	var providers map[string][]string
+	if cache.GetJSON(key, maxAge, &providers) {
+		return providers, nil
+	}
+
 	page := func(n int) (modProvidersPage, error) {
 		// oldest first, so a package added mid-fetch lands on the last page instead of shifting the rest
 		query := url.Values{
@@ -300,21 +309,22 @@ func (c *Client) ModProviders() (map[string][]string, error) {
 		return nil, err
 	}
 
-	providers := make(map[string][]string)
+	providers = make(map[string][]string)
 	seen := make(map[string]bool)
 	for _, p := range pages {
 		for _, item := range p.Items {
-			key := item.Author + "/" + item.Name
-			if seen[key] {
+			pkg := item.Author + "/" + item.Name
+			if seen[pkg] {
 				continue
 			}
-			seen[key] = true
+			seen[pkg] = true
 			for _, mod := range item.Provides {
-				providers[mod] = append(providers[mod], key)
+				providers[mod] = append(providers[mod], pkg)
 			}
 		}
 	}
 
+	cache.SaveJSON(key, providers)
 	return providers, nil
 }
 

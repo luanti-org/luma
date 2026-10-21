@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
@@ -15,12 +16,23 @@ import (
 )
 
 // newDepsServer serves each body at /api/packages/<id>/dependencies/ and records the ids requested.
+// The body for "providers" is served at /api/dependencies/, recorded as "providers".
 func newDepsServer(t *testing.T, bodies map[string]string) (*contentdb.Client, *[]string) {
 	t.Helper()
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
 
 	var requested []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/dependencies/" {
+			requested = append(requested, "providers")
+			body, ok := bodies["providers"]
+			if !ok {
+				body = `{"page_count": 1, "items": []}`
+			}
+			w.Write([]byte(body))
+			return
+		}
 		for id, body := range bodies {
 			if r.URL.Path == "/api/packages/"+id+"/dependencies/" {
 				requested = append(requested, id)
@@ -498,4 +510,98 @@ func TestResolveInstallDepsWithRoots(t *testing.T) {
 	if len(plan.NotFound) != 0 {
 		t.Errorf("not found = %+v", plan.NotFound)
 	}
+}
+
+func TestResolveInstallDepsProviders(t *testing.T) {
+	client, requested := newDepsServer(t, map[string]string{
+		"providers": `{"page_count": 1, "items": [
+			{"author": "jeija", "name": "mesecons", "provides": ["mesecons", "mesecons_mvps"]},
+			{"author": "amy", "name": "twice", "provides": ["twice"]},
+			{"author": "carol", "name": "extras", "provides": ["twice", "both"]},
+			{"author": "dan", "name": "more", "provides": ["both"]},
+			{"author": "bob", "name": "dupe", "provides": ["dupe"]},
+			{"author": "gone", "name": "stale", "provides": ["stale"]}
+		]}`,
+		"jeija/mesecons": `{"jeija/mesecons": []}`,
+		"amy/twice":      `{"amy/twice": []}`,
+		"bob/dupe":       `{"bob/dupe": []}`,
+	})
+
+	packages := index(
+		mod("jeija", "mesecons", 1), mod("amy", "twice", 2), mod("carol", "extras", 3),
+		mod("dan", "more", 4), mod("bob", "dupe", 5), mod("sam", "dupe", 6),
+	)
+	locals := []LocalPackage{{Type: "mod", Name: "mymod", Mod: content.Mod{
+		Name: "mymod", HasInit: true, Depends: []string{"mesecons_mvps", "twice", "both", "dupe", "stale", "nothing"},
+	}}}
+
+	plan, err := ResolveInstallDeps(client, nil, locals, map[string]bool{}, packages)
+	if err != nil {
+		t.Fatalf("ResolveInstallDeps: %v", err)
+	}
+
+	got := installIDs(plan)
+	slices.Sort(got)
+	// one provider, the one named like the dep, and the one of two same-named packages that provides it
+	if want := []string{"amy/twice", "bob/dupe", "jeija/mesecons"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("install = %v, want %v", got, want)
+	}
+
+	missing := make(map[string]bool)
+	for _, m := range plan.NotFound {
+		missing[m.Dep] = m.Ambiguous
+	}
+	// stale's provider isn't in the index
+	if want := map[string]bool{"both": true, "stale": false, "nothing": false}; !reflect.DeepEqual(missing, want) {
+		t.Errorf("not found (dep -> ambiguous) = %v, want %v", missing, want)
+	}
+
+	// still missing deps don't refetch a copy under 10 minutes old
+	if n := countOf(*requested, "providers"); n != 1 {
+		t.Errorf("providers fetched %d times, want 1", n)
+	}
+
+	cacheDir := os.Getenv("LUMA_CACHE_DIR")
+	entries, err := os.ReadDir(cacheDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	for _, e := range entries {
+		if err := os.Chtimes(filepath.Join(cacheDir, e.Name()), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := ResolveInstallDeps(client, nil, locals, map[string]bool{}, packages); err != nil {
+		t.Fatalf("second ResolveInstallDeps: %v", err)
+	}
+	if n := countOf(*requested, "providers"); n != 2 {
+		t.Errorf("providers fetched %d times in all, want 2 with one refetch for the missing deps", n)
+	}
+}
+
+func TestResolveInstallDepsNoProviderLookup(t *testing.T) {
+	client, requested := newDepsServer(t, map[string]string{"amy/lib": `{"amy/lib": []}`})
+	packages := index(mod("amy", "lib", 1))
+	locals := []LocalPackage{{Type: "mod", Name: "mymod", Mod: content.Mod{
+		Name: "mymod", HasInit: true, Depends: []string{"lib", "have"}, OptionalDepends: []string{"nothing"},
+	}}}
+
+	if _, err := ResolveInstallDeps(client, nil, locals, map[string]bool{"have": true}, packages); err != nil {
+		t.Fatalf("ResolveInstallDeps: %v", err)
+	}
+	if slices.Contains(*requested, "providers") {
+		t.Errorf("requested = %v, want no provider lookup when only optional deps are missing", *requested)
+	}
+}
+
+func countOf(s []string, v string) int {
+	n := 0
+	for _, x := range s {
+		if x == v {
+			n++
+		}
+	}
+	return n
 }

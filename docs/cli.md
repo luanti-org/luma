@@ -30,6 +30,12 @@ Global flags, such as `--dir`, go before the command. See [Global flags](../glob
 
 Results are written to standard output, errors and warnings to standard error.
 
+## Cache
+
+luma keeps some ContentDB data on disk so that later runs are faster. It is kept in the folder `LUMA_CACHE_DIR` if that environment variable is set, else in a `luma` folder in the user's cache folder: `$XDG_CACHE_HOME/luma` or `~/.cache/luma` on Linux, `%LocalAppData%\luma` on Windows, `~/Library/Caches/luma` on macOS. The folder can be deleted at any time.
+
+For now this holds the list of which mods each ContentDB package contains, used for the dependencies of [local packages](#local-packages). It is kept for a day, and fetched again if a required dependency isn't in a copy older than 10 minutes.
+
 ## install
 
 Installs mods, modpacks, games and texture packs, from ContentDB or from local zips and folders. Each ContentDB package is installed at its newest release compatible with the engine.
@@ -84,7 +90,7 @@ The package is copied as it is, and luma writes nothing into it. Symlinks are no
 
 The folder it is installed into is named, in order, by `--name`, the `name` in its conf, the package's own folder, or the zip's file name. A game's folder name is its game ID, as `game.conf` has no `name`. The result must be a valid name, lowercase letters, digits and `_`, so a folder like `mineclonia-main` needs `--name`. `--name` only names the folder, the `name` in the conf still counts for the mod or texture pack itself.
 
-A local mod's dependencies come from its own `mod.conf`, or for a modpack, from those of its mods. If the conf's `author` and `name` match a ContentDB package, the dependencies of that package's newest release are used to find the packages that provide them. Otherwise a dependency is installed from the one ContentDB mod with its name. If several mods share that name, luma doesn't guess, and the dependency is reported as ambiguous.
+A local mod's dependencies come from its own `mod.conf`, or for a modpack, from those of its mods. If the conf's `author` and `name` match a ContentDB package, the dependencies of that package's newest release are used to find the packages that provide them. Otherwise a dependency is installed from the one ContentDB mod with its name. Failing that, luma looks up which ContentDB mods contain a mod of that name, modpacks included, so a dependency on `mesecons_mvps` is installed from `Jeija/mesecons`. If several do, the one named like the dependency is picked. Otherwise luma doesn't guess, and the dependency is reported as ambiguous. That lookup fetches a list of every mod on ContentDB, which takes a while the first time, see [Cache](#cache).
 
 ## mods
 
