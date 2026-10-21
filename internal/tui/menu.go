@@ -4,10 +4,19 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/engine"
+	"github.com/luanti-org/luma/internal/version"
 )
+
+var asciiBorder = lipgloss.Border{
+	Top: "-", Bottom: "-", Left: "|", Right: "|",
+	TopLeft: "+", TopRight: "+", BottomLeft: "+", BottomRight: "+",
+}
+
+var menuHeaderStyle = lipgloss.NewStyle().Border(asciiBorder).Padding(0, 1)
 
 func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -54,7 +63,7 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewMenu() string {
-	s := "luma\n\n"
+	s := menuHeaderStyle.Render(fmt.Sprintf("Luma : Luanti Package Manager\nversion: %s", version.String())) + "\n\n"
 
 	for i, choice := range m.choices {
 		cursor := " "
