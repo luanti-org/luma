@@ -199,6 +199,9 @@ func TestResolveDepsReportsMissingAndExcluded(t *testing.T) {
 		if wantPkg := map[string]string{"viapkg": "amy/skippkg"}[m.Dep]; m.Package != wantPkg {
 			t.Errorf("%s: package = %q, want %q", m.Dep, m.Package, wantPkg)
 		}
+		if m.GameOnly != (m.Dep == "gameonly") {
+			t.Errorf("%s: game only = %v", m.Dep, m.GameOnly)
+		}
 	}
 
 	want := map[string]bool{"gameonly": false, "toonew": false, "nobody": false, "skipdep": true, "viapkg": true}

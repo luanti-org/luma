@@ -67,6 +67,7 @@ func TestRunUsageErrors(t *testing.T) {
 		{"no verb", []string{"things"}, "Verbs:"},
 		{"unknown noun", []string{"worlds", "list"}, `unknown command "worlds"`},
 		{"unknown verb", []string{"things", "frobnicate"}, `unknown command "things frobnicate"`},
+		{"unknown verb help hint", []string{"things", "frobnicate"}, "Run 'luma things --help'"},
 		{"extra args", []string{"things", "list", "extra"}, "unexpected arguments"},
 		{"unknown flag", []string{"things", "list", "--dir", "x"}, "unknown flag: --dir"},
 		{"single dash long flag", []string{"things", "list", "-names"}, "use --names, not -names"},

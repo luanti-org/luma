@@ -158,7 +158,8 @@ func (c *ctx) run(args []string) int {
 
 	v, ok := n.verbs[args[1]]
 	if !ok {
-		return c.usageErr("unknown command %q", nounName+" "+args[1])
+		fmt.Fprintf(c.stderr, "luma: unknown command %q\nRun 'luma %s --help' for its verbs.\n", nounName+" "+args[1], nounName)
+		return exitUsage
 	}
 
 	c.cmdName = nounName + " " + args[1]

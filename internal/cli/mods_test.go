@@ -633,6 +633,22 @@ func TestModsUpdateDependencyNotFound(t *testing.T) {
 	}
 }
 
+func TestModsUpdateDependencyGameOnly(t *testing.T) {
+	eng, f, cdb := setupDeps(t)
+	f.packagesJSON = `[{"author": "gm", "name": "somegame", "type": "game", "release": 1}]`
+	f.depsJSON = map[string]string{
+		"jane/alpha": `{"jane/alpha": [{"name": "lib", "is_optional": false, "packages": ["gm/somegame"]}]}`,
+	}
+
+	code, _, stderr := runWithCDB(t, eng, cdb, "mods", "update")
+	if code != exitOK {
+		t.Fatalf("code = %d, stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "could not find dependency lib for jane/alpha, only games provide it, see --game") {
+		t.Errorf("stderr = %q", stderr)
+	}
+}
+
 func TestModsUpdateDependencyFolderExists(t *testing.T) {
 	eng, f, cdb := setupDeps(t)
 	// not a loadable mod, so it doesn't satisfy the dependency

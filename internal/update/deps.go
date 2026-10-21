@@ -27,6 +27,7 @@ type MissingDep struct {
 	RequiredBy string // "author/name"
 	Excluded   bool   // skipped on request rather than not found
 	Ambiguous  bool   // several packages are named Dep or provide it, and none was picked
+	GameOnly   bool   // not found, but a game provides it
 	Package    string // "author/name" that was excluded, empty if excluded by Dep
 }
 
@@ -422,7 +423,7 @@ func (r *depResolver) resolve(id string) error {
 			pkg, ok := r.candidate(dep, fallback)
 			if !ok {
 				if fallback {
-					r.miss(MissingDep{Dep: dep.Name, RequiredBy: id})
+					r.miss(MissingDep{Dep: dep.Name, RequiredBy: id, GameOnly: providedByGame(dep, r.packages)})
 				}
 				continue
 			}
