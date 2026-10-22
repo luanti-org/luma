@@ -7,7 +7,7 @@ Running luma without a command opens the terminal UI:
     luma --dir /path/to/luanti
     luma --flatpak
 
-The main menu shows the folders and engine version in use, and leads to the mods, games and texture packs screens.
+The main menu shows the folders and engine version in use, and leads to the ContentDB, mods, games and texture packs screens.
 
 ## General keys
 
@@ -20,6 +20,37 @@ The main menu shows the folders and engine version in use, and leads to the mods
 | `ctrl+c` | quit immediately |
 
 `q` is ignored during some operations, so folders aren't left half-changed.
+
+## Browse ContentDB
+
+Lists the ContentDB packages compatible with the engine:
+
+* installed packages first, those with an update at the top, then the rest by popularity
+* each with its title, `author/name`, type and short description
+* fetched on first opening, or taken from the [cache](../cli#cache) if under 10 minutes old
+
+| tag | meaning |
+|---|---|
+| `[U]` | installed, update available |
+| `[I]` | installed |
+
+| key | action |
+|---|---|
+| `tab` / `shift+tab`, `1`-`4` | filter by type |
+| `pgup` / `pgdown`, `home` / `end` | move by page, to the start or end |
+| `r` | fetch the list again |
+
+### Package details
+
+Selecting a package shows:
+
+* its install status and newest compatible release
+* content warnings
+* license, development state, downloads, tags, maintainers
+* supported games, for mods
+* links to its ContentDB page and source
+
+Press `d` to expand or collapse the full description, and `up` / `down` to scroll it.
 
 ## Mods
 
