@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/luanti-org/luma/internal/cache"
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/engine"
@@ -49,12 +50,34 @@ type ModDep struct {
 	Package    contentdb.Package
 }
 
-// FetchPackageIndex fetches every package compatible with engineInfo, keyed for ResolveDeps.
-func FetchPackageIndex(client *contentdb.Client, engineInfo engine.Info) (map[string]contentdb.Package, error) {
+// PackageListMaxAge is how old a cached package list may be.
+const PackageListMaxAge = 10 * time.Minute
+
+// FetchPackages fetches every package compatible with engineInfo, in ContentDB's order, most popular first.
+// A cached copy younger than maxAge is returned instead, a fresh fetch replaces it.
+func FetchPackages(client *contentdb.Client, engineInfo engine.Info, maxAge time.Duration) ([]contentdb.Package, error) {
+	// bump the version when the cached shape or contents change
+	key := fmt.Sprintf("packages/v1 %s protocol=%d engine=%s", client.BaseURL, engineInfo.Protocol, engineInfo.Version)
+	var packages []contentdb.Package
+	if cache.GetJSON(key, maxAge, &packages) {
+		return packages, nil
+	}
+
 	packages, err := client.Search(contentdb.SearchOptions{
 		ProtocolVersion: engineInfo.Protocol,
 		EngineVersion:   engineInfo.Version,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	cache.SaveJSON(key, packages)
+	return packages, nil
+}
+
+// FetchPackageIndex fetches the packages from FetchPackages, keyed for ResolveDeps.
+func FetchPackageIndex(client *contentdb.Client, engineInfo engine.Info) (map[string]contentdb.Package, error) {
+	packages, err := FetchPackages(client, engineInfo, PackageListMaxAge)
 	if err != nil {
 		return nil, err
 	}

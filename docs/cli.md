@@ -38,7 +38,10 @@ luma caches some ContentDB data on disk, in `LUMA_CACHE_DIR` if set, else in a `
 * Windows: `%LocalAppData%\luma`
 * macOS: `~/Library/Caches/luma`
 
-The folder can be deleted at any time. For now it holds which mods each ContentDB mod and game contains, used for the dependencies of [local packages](#local-packages) and of mods ContentDB can't look up (see [mods list-deps](#mods-list-deps)). It is kept for a day, and fetched again if a required dependency isn't in a copy older than 10 minutes.
+The folder can be deleted at any time. It holds:
+
+* the list of packages compatible with the engine, used to find packages and dependencies, kept for 10 minutes. A package released in that time may be missed, or installed at its previous release
+* which mods each ContentDB mod and game contains, used for the dependencies of [local packages](#local-packages) and of mods ContentDB can't look up (see [mods list-deps](#mods-list-deps)). It is kept for a day, and fetched again if a required dependency isn't in a copy older than 10 minutes
 
 ## install
 

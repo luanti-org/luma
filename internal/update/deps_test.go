@@ -256,6 +256,7 @@ func TestResolveDepsFetchError(t *testing.T) {
 }
 
 func TestFetchPackageIndex(t *testing.T) {
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
 	var query string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -274,6 +275,47 @@ func TestFetchPackageIndex(t *testing.T) {
 	}
 	if query != "engine_version=5.13.0&protocol_version=48" {
 		t.Errorf("query = %q, want both version params", query)
+	}
+}
+
+func TestFetchPackagesCachesInOrder(t *testing.T) {
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
+	requests := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Write([]byte(`[{"author": "zed", "name": "top", "type": "mod", "release": 1},
+			{"author": "amy", "name": "next", "type": "game", "release": 2}]`))
+	}))
+	t.Cleanup(srv.Close)
+
+	client := contentdb.New(srv.URL)
+	eng := engine.Info{Protocol: 48, Version: "5.13.0"}
+	for range 2 {
+		packages, err := FetchPackages(client, eng, time.Hour)
+		if err != nil {
+			t.Fatalf("FetchPackages: %v", err)
+		}
+		if len(packages) != 2 || packages[0].Name != "top" || packages[1].Name != "next" {
+			t.Errorf("packages = %+v, want top then next", packages)
+		}
+	}
+	if requests != 1 {
+		t.Errorf("requests = %d, want 1 with the second call cached", requests)
+	}
+
+	if _, err := FetchPackages(client, engine.Info{Protocol: 48, Version: "5.14.0"}, time.Hour); err != nil {
+		t.Fatalf("FetchPackages: %v", err)
+	}
+	if requests != 2 {
+		t.Errorf("requests = %d, want 2 after another engine version", requests)
+	}
+
+	if _, err := FetchPackages(client, eng, 0); err != nil {
+		t.Fatalf("FetchPackages: %v", err)
+	}
+	if requests != 3 {
+		t.Errorf("requests = %d, want 3 after the cache expired", requests)
 	}
 }
 
