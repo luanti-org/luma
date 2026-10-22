@@ -35,6 +35,8 @@ const (
 	screenGameDetail
 	screenTexturepacks
 	screenTexturepackDetail
+	screenBrowse
+	screenBrowseDetail
 )
 
 // Used until the first tea.WindowSizeMsg arrives.
@@ -143,6 +145,21 @@ type model struct {
 
 	selectedTexturepack content.Texturepack
 
+	browsePackages  []contentdb.Package // nil until the first fetch succeeds
+	browseLoading   bool
+	browseErr       error
+	browseRetry     int // retries of the current fetch so far
+	browseFilter    int // index into browseFilters
+	browseCursor    int
+	browseInstalled map[string]int // release by browseKey, scanned on each visit
+
+	browseSelected       contentdb.Package
+	browseDetails        *contentdb.PackageDetails
+	browseDetailsLoading bool
+	browseDetailsErr     error
+	browseDescOpen       bool // long description expanded
+	browseDescScroll     int  // first long description line shown
+
 	bulbOn        bool
 	bulbStuttered bool // the current on stretch is the short gap inside a dip
 }
@@ -158,7 +175,7 @@ func New(engInfo engine.Info, engWarn error) model {
 	return model{
 		screen:  screenMenu,
 		cursor:  0,
-		choices: []string{"Manage mods", "Manage games", "Manage texture packs", "Quit"},
+		choices: []string{"Browse ContentDB", "Manage mods", "Manage games", "Manage texture packs", "Quit"},
 		engInfo: engInfo,
 		engWarn: engWarn,
 		cdb:     cdb,
@@ -241,6 +258,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleTexturepackUpdateStep(stepMsg)
 	}
 
+	if fetchedMsg, ok := msg.(browseFetchedMsg); ok {
+		return m.handleBrowseFetched(fetchedMsg)
+	}
+
+	if retryMsg, ok := msg.(browseRetryMsg); ok {
+		return m.handleBrowseRetry(retryMsg)
+	}
+
+	if detailsMsg, ok := msg.(browseDetailsMsg); ok {
+		return m.handleBrowseDetails(detailsMsg)
+	}
+
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -277,6 +306,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateTexturepacks(keyMsg)
 	case screenTexturepackDetail:
 		return m.updateTexturepackDetail(keyMsg)
+	case screenBrowse:
+		return m.updateBrowse(keyMsg)
+	case screenBrowseDetail:
+		return m.updateBrowseDetail(keyMsg)
 	}
 
 	return m, nil
@@ -304,6 +337,10 @@ func (m model) View() string {
 		return m.viewTexturepacks()
 	case screenTexturepackDetail:
 		return m.viewTexturepackDetail()
+	case screenBrowse:
+		return m.viewBrowse()
+	case screenBrowseDetail:
+		return m.viewBrowseDetail()
 	default:
 		return m.viewMenu()
 	}

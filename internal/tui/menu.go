@@ -91,25 +91,27 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		switch m.cursor {
 		case 0:
+			return m.openBrowse()
+		case 1:
 			if !m.modActionInProgress { // a folder may be mid-replace; the run rescans when done
 				m.mods, m.modsErr = content.ScanMods(m.engInfo.ModsDir)
 				// folders may have been removed since the last visit
 				m.modsCursor = min(m.modsCursor, max(modsRowCount+len(m.mods)-1, 0))
 			}
 			m.screen = screenMods
-		case 1:
+		case 2:
 			if !m.gameActionInProgress {
 				m.games, m.gamesErr = content.ScanGames(m.engInfo.GamesDir)
 				m.gamesCursor = min(m.gamesCursor, max(gamesRowCount+len(m.games)-1, 0))
 			}
 			m.screen = screenGames
-		case 2:
+		case 3:
 			if !m.texturepackActionInProgress {
 				m.texturepacks, m.texturepacksErr = content.ScanTextures(m.engInfo.TexturesDir)
 				m.texturepacksCursor = min(m.texturepacksCursor, max(texturepacksRowCount+len(m.texturepacks)-1, 0))
 			}
 			m.screen = screenTexturepacks
-		case 3:
+		case 4:
 			return m, tea.Quit
 		}
 	}

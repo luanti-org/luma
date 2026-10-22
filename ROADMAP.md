@@ -11,6 +11,7 @@ The tool covers the ContentDB and world/server management side of Luanti dev too
 
 - **ContentDB package management**
   - Search ContentDB for mods, games and texture packs
+  - Show a package's ContentDB details (description, license, content warnings, links) from the CLI
   - Install a package along with its dependencies
   - Choose the ContentDB URL, so a mirror can be used
   - Optional "git mode": install and update a mod from its git repository instead of a release zip
