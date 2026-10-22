@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"math/rand/v2"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +19,59 @@ var asciiBorder = lipgloss.Border{
 }
 
 var menuHeaderStyle = lipgloss.NewStyle().Border(asciiBorder).Padding(0, 1)
+
+var (
+	bulbLowStyle = lipgloss.NewStyle().Width(13).
+			Foreground(lipgloss.AdaptiveColor{Light: "#8A7A2E", Dark: "#C8B145"})
+	bulbOnStyle = lipgloss.NewStyle().Width(13).
+			Foreground(lipgloss.AdaptiveColor{Light: "#B8860B", Dark: "#FFF27A"})
+	bulbBaseStyle = lipgloss.NewStyle().Width(13).
+			Foreground(lipgloss.AdaptiveColor{Light: "#5A5A5A", Dark: "#B0B0B0"})
+)
+
+const bulbLowGlass = `    .---.
+   /     \
+  |  ~~~  |
+   \     /
+    |   |`
+
+const bulbOnGlass = ` /  .---.  \
+   /     \
+| |  ~~~  | |
+   \     /
+ \  |   |  /`
+
+const bulbBase = `    |===|
+    '---'`
+
+type bulbTickMsg struct{}
+
+func bulbTick(lo, hi int) tea.Cmd {
+	d := time.Duration(lo+rand.IntN(hi-lo)) * time.Millisecond
+	return tea.Tick(d, func(time.Time) tea.Msg { return bulbTickMsg{} })
+}
+
+// flickerBulb keeps the bulb mostly on, each dip to low stays under 0.5s even with a stutter.
+func (m *model) flickerBulb() tea.Cmd {
+	m.bulbOn = !m.bulbOn
+	switch {
+	case !m.bulbOn:
+		return bulbTick(40, 160)
+	case !m.bulbStuttered && rand.IntN(3) == 0:
+		m.bulbStuttered = true
+		return bulbTick(60, 150)
+	}
+	m.bulbStuttered = false
+	return bulbTick(1500, 5000)
+}
+
+func bulb(on bool) string {
+	glass := bulbLowStyle.Render(bulbLowGlass)
+	if on {
+		glass = bulbOnStyle.Render(bulbOnGlass)
+	}
+	return glass + "\n" + bulbBaseStyle.Render(bulbBase)
+}
 
 func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -63,7 +118,8 @@ func (m model) updateMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewMenu() string {
-	s := menuHeaderStyle.Render(fmt.Sprintf("Luma : Luanti Package Manager\nversion: %s", version.String())) + "\n\n"
+	title := menuHeaderStyle.Render(fmt.Sprintf("Luma : Luanti Package Manager\nversion: %s", version.String()))
+	s := lipgloss.JoinHorizontal(lipgloss.Center, lipgloss.NewStyle().Padding(1, 4, 0).Render(bulb(m.bulbOn)), title) + "\n\n"
 
 	for i, choice := range m.choices {
 		cursor := " "

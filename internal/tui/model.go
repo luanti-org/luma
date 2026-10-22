@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
@@ -141,11 +142,15 @@ type model struct {
 	texturepackUpdateResults []texturepackUpdateResult
 
 	selectedTexturepack content.Texturepack
+
+	bulbOn        bool
+	bulbStuttered bool // the current on stretch is the short gap inside a dip
 }
 
 // New returns the initial TUI model, ready to pass to tea.NewProgram.
 // engWarn is the warning from engine detection, shown on the main menu.
 func New(engInfo engine.Info, engWarn error) model {
+	lipgloss.HasDarkBackground() // query now, before bubbletea owns stdin and eats the reply
 	cdb := contentdb.New("")
 	cdb.HTTPClient = &http.Client{Timeout: cdbRequestTimeout} // don't share/mutate http.DefaultClient
 	cdb.UserAgent = version.UserAgent(engInfo.Version)
@@ -159,11 +164,12 @@ func New(engInfo engine.Info, engWarn error) model {
 		cdb:     cdb,
 		width:   defaultWidth,
 		height:  defaultHeight,
+		bulbOn:  true,
 	}
 }
 
 func (m model) Init() tea.Cmd {
-	return nil
+	return bulbTick(1500, 5000)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -171,6 +177,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = sizeMsg.Width
 		m.height = sizeMsg.Height
 		return m, nil
+	}
+
+	if _, ok := msg.(bulbTickMsg); ok {
+		cmd := m.flickerBulb()
+		return m, cmd
 	}
 
 	if checkedMsg, ok := msg.(modUpdatesCheckedMsg); ok {
