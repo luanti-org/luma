@@ -125,6 +125,7 @@ func buildModZip(name string) []byte {
 // setupMods installs alpha and beta at release 1 and gamma at 5; the fake CDB has alpha 2, beta 3, gamma 5.
 func setupMods(t *testing.T) (engine.Info, *fakeCDB, *contentdb.Client) {
 	t.Helper()
+	t.Setenv("LUMA_CACHE_DIR", t.TempDir())
 
 	dir := t.TempDir()
 	for name, release := range map[string]string{"alpha": "1", "beta": "1", "gamma": "5"} {
