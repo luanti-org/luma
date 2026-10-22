@@ -133,21 +133,17 @@ func install(c *ctx, args []string) int {
 		steps = append(steps, step{l.Folder, l.Package(), "installed from " + l.arg, run})
 	}
 
-	// every step installs into a new folder, so undoing the run is removing the folders it created
-	var created []string
+	var run update.InstallRun
 	for _, st := range steps {
 		dest, err := update.PackageDir(c.eng, st.pkg)
 		if err == nil {
-			existed := pathExists(dest)
-			err = st.run()
-			if !existed && pathExists(dest) {
-				created = append(created, dest)
-			}
+			err = run.Step(dest, st.run)
 		}
 
 		if err != nil {
 			fmt.Fprintf(c.stderr, "luma: %s: install failed: %v\n", st.id, err)
-			if !c.removeAll(created) {
+			if err := run.Rollback(); err != nil {
+				c.err("%v", err)
 				return c.err("install failed, could not remove everything this run installed")
 			}
 			return c.err("install failed, nothing was changed")
@@ -222,18 +218,6 @@ func (c *ctx) openLocals(installed installedContent, dests map[string]string, pa
 func looksLikePath(arg string) bool {
 	return strings.HasSuffix(strings.ToLower(arg), ".zip") || strings.HasPrefix(arg, ".") ||
 		filepath.IsAbs(arg) || strings.Count(arg, "/") > 1 || strings.ContainsRune(arg, '\\')
-}
-
-// removeAll removes dirs, reporting any failure itself. ok is false if one could not be removed.
-func (c *ctx) removeAll(dirs []string) (ok bool) {
-	ok = true
-	for _, dir := range dirs {
-		if err := os.RemoveAll(dir); err != nil {
-			fmt.Fprintf(c.stderr, "luma: removing %s: %v\n", dir, err)
-			ok = false
-		}
-	}
-	return ok
 }
 
 // installedContent is what is on disk, a missing folder counts as empty.
