@@ -1,6 +1,7 @@
 package update
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -98,6 +99,33 @@ func InstallPackage(client *contentdb.Client, eng engine.Info, pkg contentdb.Pac
 	}
 
 	return installNew(client, pkg, dest, contentdb.ReasonNew)
+}
+
+// InstallRun tracks the folders a run of installs created, so a failed run can be undone.
+type InstallRun struct {
+	created []string
+}
+
+// Step runs install, which installs into dest, and remembers dest if install created it.
+func (r *InstallRun) Step(dest string, install func() error) error {
+	_, statErr := os.Stat(dest)
+	err := install()
+	if _, after := os.Stat(dest); statErr != nil && after == nil {
+		r.created = append(r.created, dest)
+	}
+	return err
+}
+
+// Rollback removes every folder the run created, trying all of them even if one fails.
+func (r *InstallRun) Rollback() error {
+	var errs []error
+	for _, dir := range r.created {
+		if err := os.RemoveAll(dir); err != nil {
+			errs = append(errs, fmt.Errorf("removing %s: %w", dir, err))
+		}
+	}
+	r.created = nil
+	return errors.Join(errs...)
 }
 
 // installNew installs pkg into dest, which must not exist, and writes the conf fields the Luanti client writes.
