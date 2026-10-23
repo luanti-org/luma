@@ -227,7 +227,7 @@ func (m model) updateMods(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if m.busy() {
 					break
 				}
-				return m.openGamePicker(), nil
+				return m.openGamePicker(screenMods), nil
 			}
 			break
 		}

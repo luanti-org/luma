@@ -13,7 +13,9 @@ import (
 const noGameLabel = "<None>"
 
 // openGamePicker rescans the games and shows the picker with the cursor on the current pick.
-func (m model) openGamePicker() model {
+// Closing it goes back to returnTo.
+func (m model) openGamePicker(returnTo screen) model {
+	m.pickerReturn = returnTo
 	m.pickerGames, m.pickerErr = content.ScanGames(m.engInfo.GamesDir)
 
 	m.pickerCursor = 0
@@ -34,7 +36,7 @@ func (m model) updateGamePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "esc", "backspace":
-		m.screen = screenMods
+		m.screen = m.pickerReturn
 
 	case "up", "k":
 		if m.pickerCursor > 0 {
@@ -47,16 +49,18 @@ func (m model) updateGamePicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "enter", " ":
+		m.screen = m.pickerReturn
 		if m.pickerErr != nil {
-			m.screen = screenMods // the list is incomplete, keep the current pick
-			break
+			break // the list is incomplete, keep the current pick
 		}
 
 		m.modsGame = content.Game{}
 		if m.pickerCursor > 0 {
 			m.modsGame = m.pickerGames[m.pickerCursor-1]
 		}
-		m.screen = screenMods
+		if m.screen == screenBrowseInstall {
+			return m.rerunBrowseResolve()
+		}
 	}
 
 	return m, nil
