@@ -39,6 +39,21 @@ Lists the ContentDB packages compatible with the engine:
 | `tab` / `shift+tab`, `1`-`4` | filter by type |
 | `pgup` / `pgdown`, `home` / `end` | move by page, to the start or end |
 | `r` | fetch the list again |
+| `/` | search |
+
+### Searching
+
+Press `/` and type to show only packages whose title, `author/name` or short description contain every typed word, ignoring case. The search applies to every type tab, and the order stays the same.
+
+While typing:
+
+* `up` / `down`, `pgup` / `pgdown` and `tab` / `shift+tab` still work
+* `left` / `right` and `home` / `end` move the text cursor
+* `backspace` and `delete` delete a character, `ctrl+u` clears the search
+* `enter` keeps the search and the other keys work again
+* `esc` clears the search
+
+With a kept search, `esc` or `backspace` clears it, pressing it again goes back.
 
 ### Package details
 

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -31,6 +32,7 @@ var (
 	browseInstalledStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	browseUpdateStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	browseDescStyle      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#555555", Dark: "#B4B4B4"})
+	browseSearchStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
 )
 
 // browseFetchRetries is how many times a failed package list fetch is retried, waiting longer each time.
@@ -136,18 +138,16 @@ func (m model) scanInstalledReleases() map[string]int {
 	return installed
 }
 
-// browseList returns the packages the current type tab shows, ordered like the client:
+// browseList returns the packages the current type tab shows that match the search, ordered like the client:
 // installed first, those with an update before the rest, by title, then the others in ContentDB's order.
 func (m model) browseList() []contentdb.Package {
 	pkgType := browseFilters[m.browseFilter].pkgType
 
 	var installed, rest []contentdb.Package
-	for _, p := range m.browsePackages {
-		switch {
-		case pkgType != "" && p.Type != pkgType:
-		case m.browseTag(p) != "":
+	for _, p := range update.MatchPackages(m.browsePackages, m.browseQuery, pkgType) {
+		if m.browseTag(p) != "" {
 			installed = append(installed, p)
-		default:
+		} else {
 			rest = append(rest, p)
 		}
 	}
@@ -179,11 +179,82 @@ func (m model) browseTag(p contentdb.Package) string {
 
 // browseRows is how many packages fit on screen, each takes two lines.
 func (m model) browseRows() int {
-	return max(m.listRows(9+strings.Count(m.browseHelp(), "\n"))/2, 1)
+	chrome := 9 + strings.Count(m.browseHelp(), "\n")
+	if m.browseSearchShown() {
+		chrome += 2
+	}
+	return max(m.listRows(chrome)/2, 1)
+}
+
+func (m model) browseSearchShown() bool {
+	return m.browseTyping || m.browseQuery != ""
 }
 
 func (m model) browseHelp() string {
-	return helpLine(m.width, "up/down/pgup/pgdown", "to move", "enter", "for details", "tab or 1-4", "to filter", "r", "to refresh", "esc/backspace", "to go back", "q", "to quit")
+	if m.browseTyping {
+		return helpLine(m.width, "up/down/pgup/pgdown", "to move", "left/right/home/end", "to edit", "tab", "to filter", "enter", "to keep search", "ctrl+u", "to clear", "esc", "to cancel search")
+	}
+	back := "to go back"
+	if m.browseQuery != "" {
+		back = "to clear search"
+	}
+	return helpLine(m.width, "up/down/pgup/pgdown", "to move", "enter", "for details", "/", "to search", "tab or 1-4", "to filter", "r", "to refresh", "esc/backspace", back, "q", "to quit")
+}
+
+// setBrowseQuery changes the search, moving the cursor to the top if it changed.
+func (m model) setBrowseQuery(query string) model {
+	if query != m.browseQuery {
+		m.browseQuery = query
+		m.browseCursor = 0
+	}
+	return m
+}
+
+// updateBrowseSearch handles a key typed into the search line.
+func (m model) updateBrowseSearch(msg tea.KeyMsg) model {
+	query := []rune(m.browseQuery)
+	pos := min(m.browseQueryPos, len(query))
+
+	switch msg.String() {
+	case "enter":
+		m.browseTyping = false
+	case "esc":
+		m.browseTyping = false
+		m.browseQueryPos = 0
+		return m.setBrowseQuery("")
+	case "ctrl+u":
+		m.browseQueryPos = 0
+		return m.setBrowseQuery("")
+	case "left":
+		m.browseQueryPos = max(pos-1, 0)
+	case "right":
+		m.browseQueryPos = min(pos+1, len(query))
+	case "home":
+		m.browseQueryPos = 0
+	case "end":
+		m.browseQueryPos = len(query)
+	case "backspace":
+		if pos > 0 {
+			m.browseQueryPos = pos - 1
+			m = m.setBrowseQuery(string(query[:pos-1]) + string(query[pos:]))
+		}
+	case "delete":
+		if pos < len(query) {
+			m = m.setBrowseQuery(string(query[:pos]) + string(query[pos+1:]))
+		}
+	default:
+		if (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace) && !msg.Alt {
+			typed := []rune(strings.Map(func(r rune) rune {
+				if !unicode.IsPrint(r) {
+					return -1
+				}
+				return r
+			}, string(msg.Runes)))
+			m.browseQueryPos = pos + len(typed)
+			m = m.setBrowseQuery(string(query[:pos]) + string(typed) + string(query[pos:]))
+		}
+	}
+	return m
 }
 
 func (m model) setBrowseFilter(filter int) model {
@@ -195,14 +266,31 @@ func (m model) setBrowseFilter(filter int) model {
 }
 
 func (m model) updateBrowse(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.browseTyping {
+		switch msg.String() {
+		case "up", "down", "pgup", "pgdown", "tab", "shift+tab":
+		default:
+			return m.updateBrowseSearch(msg), nil
+		}
+	}
+
 	last := max(len(m.browseList())-1, 0)
 
 	switch key := msg.String(); key {
 	case "q":
 		return m, tea.Quit
 
+	case "/":
+		m.browseTyping = true
+		m.browseQueryPos = len([]rune(m.browseQuery))
+
 	case "esc", "backspace":
-		m.screen = screenMenu
+		if m.browseQuery != "" {
+			m.browseQueryPos = 0
+			m = m.setBrowseQuery("")
+		} else {
+			m.screen = screenMenu
+		}
 
 	case "up", "k":
 		m.browseCursor = max(m.browseCursor-1, 0)
@@ -257,6 +345,10 @@ func (m model) viewBrowse() string {
 	}
 	s += "\n\n"
 
+	if m.browseSearchShown() {
+		s += m.viewBrowseSearch() + "\n\n"
+	}
+
 	var tabs []string
 	for i, f := range browseFilters {
 		label := fmt.Sprintf(" %d %s ", i+1, f.label)
@@ -283,7 +375,9 @@ func (m model) viewBrowse() string {
 	}
 
 	list := m.browseList()
-	if len(list) == 0 {
+	if len(list) == 0 && m.browseQuery != "" {
+		s += "(no matches)\n"
+	} else if len(list) == 0 {
 		s += "(no packages)\n"
 	}
 
@@ -338,6 +432,37 @@ func (m model) viewBrowse() string {
 	s += help
 
 	return s
+}
+
+// viewBrowseSearch renders the search line, scrolled to keep the text cursor in view.
+func (m model) viewBrowseSearch() string {
+	query := []rune(m.browseQuery)
+	pos := len(query)
+	if m.browseTyping {
+		pos = min(m.browseQueryPos, len(query))
+	}
+
+	start, end := 0, len(query)
+	if room := m.width - len("search: "); m.width > 0 && room > 0 {
+		start = max(pos-room+1, 0)
+		end = min(end, start+room)
+	}
+
+	label := browseSearchStyle.Render("search: ")
+	if !m.browseTyping {
+		return label + string(query[start:end])
+	}
+
+	cursor := " "
+	if pos < end {
+		cursor = string(query[pos])
+	}
+	after := ""
+	if pos+1 < end {
+		after = string(query[pos+1 : end])
+	}
+	return label + browseSearchStyle.Render(string(query[start:pos])) +
+		browseSearchStyle.Reverse(true).Render(cursor) + browseSearchStyle.Render(after)
 }
 
 func browseTypeName(pkgType string) string {
