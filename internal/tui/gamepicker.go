@@ -86,7 +86,8 @@ func (m model) viewGamePicker() string {
 	}
 
 	total := len(m.pickerGames) + 1
-	rows := m.listRows(6)
+	help := helpLine(m.width, "up/down", "to move", "enter", "to pick", "esc/backspace", "to go back", "q", "to quit")
+	rows := m.listRows(6 + strings.Count(help, "\n"))
 	if m.pickerErr != nil {
 		rows = max(rows-2, 1)
 	}
@@ -112,7 +113,7 @@ func (m model) viewGamePicker() string {
 	}
 
 	s += "\n\n(mods of the picked game count as installed)\n"
-	s += "(up/down to move, enter to pick, esc/backspace to go back, q to quit)"
+	s += help
 
 	return s
 }

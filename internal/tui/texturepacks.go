@@ -240,7 +240,7 @@ func (m model) viewTexturepacks() string {
 
 	if m.texturepacksErr != nil {
 		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.texturepacksErr)) + "\n"
-		s += "\n(backspace to go back)\n"
+		s += "\n" + helpLine(m.width, "backspace", "to go back") + "\n"
 		return s
 	}
 
@@ -264,7 +264,8 @@ func (m model) viewTexturepacks() string {
 		s += "(no texture packs found)\n"
 	}
 
-	rows := m.listRows(7 + texturepacksRowCount)
+	help := helpLine(m.width, "up/down", "to move", "enter", "to select", "u", "to update texture pack", "esc/backspace", "to go back", "q", "to quit")
+	rows := m.listRows(7 + texturepacksRowCount + strings.Count(help, "\n"))
 	listCursor := max(m.texturepacksCursor-texturepacksRowCount, 0)
 	start, end := listWindow(listCursor, len(m.texturepacks), rows)
 
@@ -307,7 +308,7 @@ func (m model) viewTexturepacks() string {
 	}
 
 	s += "\n\n(! = no valid texture_pack.conf, name guessed from folder, U = update available)\n"
-	s += "(up/down to move, enter to select, u to update texture pack, esc/backspace to go back, q to quit)"
+	s += help
 
 	return s
 }

@@ -6,6 +6,32 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+var helpKeyStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#7B3FC4", Dark: "#B48CFF"})
+
+// helpLine renders "| key action | key action |" from key/action pairs, with the keys colored,
+// wrapped between items to fit width. width <= 0 disables wrapping.
+func helpLine(width int, pairs ...string) string {
+	var lines, cur []string
+	curWidth := 0
+	for i := 0; i+1 < len(pairs); i += 2 {
+		w := len([]rune(pairs[i])) + 1 + len([]rune(pairs[i+1]))
+		if width > 0 && len(cur) > 0 && curWidth+3+w+2 > width {
+			lines = append(lines, "| "+strings.Join(cur, " | ")+" |")
+			cur, curWidth = nil, 0
+		}
+		if len(cur) == 0 {
+			curWidth = 2 + w
+		} else {
+			curWidth += 3 + w
+		}
+		cur = append(cur, helpKeyStyle.Render(pairs[i])+" "+pairs[i+1])
+	}
+	if len(cur) > 0 {
+		lines = append(lines, "| "+strings.Join(cur, " | ")+" |")
+	}
+	return strings.Join(lines, "\n")
+}
+
 // styledLine is a line whose style goes on after it is truncated.
 type styledLine struct {
 	text  string

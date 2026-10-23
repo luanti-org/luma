@@ -335,7 +335,7 @@ func (m model) viewModDeps() string {
 	local := m.depsLocal
 
 	s := fmt.Sprintf("dependencies of %s\n", mod.Name)
-	help := "(up/down to move, enter/space to toggle or select, esc/backspace to go back, q to quit)"
+	help := helpLine(m.width, "up/down", "to move", "enter/space", "to toggle or select", "esc/backspace", "to go back", "q", "to quit")
 
 	if m.depsLoading {
 		return s + "\nLoading...\n\n" + help
@@ -428,7 +428,7 @@ func (m model) viewModDeps() string {
 		below = append(below, results...)
 	}
 
-	chrome := 7 + len(below)
+	chrome := 7 + len(below) + strings.Count(help, "\n")
 	if gameOnly {
 		chrome++
 	}

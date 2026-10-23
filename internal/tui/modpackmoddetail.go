@@ -43,7 +43,7 @@ func (m model) viewModpackModDetail() string {
 		s += wrapLabeled("optional:    ", mod.OptionalDepends, m.width)
 	}
 
-	s += "\n(esc/backspace to go back, q to quit)\n"
+	s += "\n" + helpLine(m.width, "esc/backspace", "to go back", "q", "to quit") + "\n"
 
 	return s
 }
