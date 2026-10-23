@@ -303,11 +303,17 @@ func (m model) viewBrowse() string {
 			tag = "   "
 		}
 
-		line := fmt.Sprintf("%s %s %s  %s/%s", cursor, tag, p.Title, p.Author, p.Name)
+		head := fmt.Sprintf("%s %s %s", cursor, tag, p.Title)
+		id := "  " + p.Author + "/" + p.Name
+		line := head + id
 		if showType {
 			line += "  [" + browseTypeName(p.Type) + "]"
 		}
 		line = truncate(line, m.width)
+		if r, h := []rune(line), len([]rune(head)); len(r) > h {
+			end := min(len(r), h+len([]rune(id)))
+			line = string(r[:h]) + browseDescStyle.Render(string(r[h:end])) + string(r[end:])
+		}
 		switch tag {
 		case "[U]":
 			line = strings.Replace(line, "[U]", browseUpdateStyle.Render("[U]"), 1)
@@ -316,7 +322,7 @@ func (m model) viewBrowse() string {
 		}
 
 		s += line + "\n"
-		s += browseDescStyle.Render(truncate("      "+p.ShortDescription, m.width)) + "\n"
+		s += browseDescStyle.Render(truncate("        "+p.ShortDescription, m.width)) + "\n"
 	}
 
 	pad := 2 * (rows - (end - start))
