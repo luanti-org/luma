@@ -89,6 +89,8 @@ var commands = map[string]noun{
 var topLevel = map[string]verb{
 	"install": {"[-n] [-y] [--no-deps] [--game id] [-l path]... [--name name] [name|author/name...]",
 		"install packages from ContentDB or local zips and folders, with the dependencies of mods", install},
+	"search": {"[-t mod|game|txp] [--names] [-r] [word...]",
+		"search ContentDB for packages compatible with the engine, or list them all if no words are given", search},
 }
 
 // aliases maps alternative noun names to their entry in commands, help lists only the latter

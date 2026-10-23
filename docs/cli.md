@@ -2,10 +2,11 @@
 title: Command line
 ---
 
-Passing a command runs it without opening the terminal UI. Commands for installed content are `<noun> <verb>`, [install](#install) has no noun:
+Passing a command runs it without opening the terminal UI. Commands for installed content are `<noun> <verb>`, [install](#install) and [search](#search) have no noun:
 
     luma [global flags] <noun> <verb> [flags] [arguments]
     luma [global flags] install [flags] [arguments]
+    luma [global flags] search [flags] [words]
 
 Global flags such as `--dir` go before the command, see [Global flags](../global-flags):
 
@@ -40,7 +41,7 @@ luma caches some ContentDB data on disk, in `LUMA_CACHE_DIR` if set, else in a `
 
 The folder can be deleted at any time. It holds:
 
-* the list of packages compatible with the engine, used to find packages and dependencies, kept for 10 minutes. A package released in that time may be missed, or installed at its previous release
+* the list of packages compatible with the engine, used to find and search packages and dependencies, kept for 10 minutes. A package released in that time may be missed, or installed at its previous release
 * which mods each ContentDB mod and game contains, used for the dependencies of [local packages](#local-packages) and of mods ContentDB can't look up (see [mods list-deps](#mods-list-deps)). It is kept for a day, and fetched again if a required dependency isn't in a copy older than 10 minutes
 
 ## install
@@ -116,6 +117,26 @@ A local mod's dependencies come from its `mod.conf`, or for a modpack from those
 3. the one ContentDB mod that contains a mod of that name, modpacks included. A dependency on `mesecons_mvps` is installed from `Jeija/mesecons`. Of several, the one named like the dependency is picked
 
 Otherwise luma doesn't guess, and the dependency is reported as ambiguous. Games are never picked, a dependency only games contain is reported as such, see `--game`. Step 3 fetches a list of every mod and game on ContentDB, which takes a while the first time, see [Cache](#cache).
+
+## search
+
+Lists the ContentDB packages compatible with the engine that match every word, the same as the [terminal UI](../terminal-ui#searching) search. With no words, it lists them all.
+
+    luma search mobs              # by title, author/name or short description
+    luma search mob redo          # every word must match, ignoring case
+    luma search -t game           # every game
+    luma search -t m TenPlus1/    # mods by an author
+    luma search --names farming   # only author/name, one per line
+
+| flag | meaning |
+|---|---|
+| `-t`, `--type` | only packages of this type: `mod`, `game` or `txp`, or `m`, `g`, `t`, `texturepack` |
+| `--names` | print only `author/name`, one per line |
+| `-r`, `--refresh` | fetch the package list again instead of using the [cache](#cache) |
+
+A word matches part of a package's title, its `author/name` or its short description. Installed packages come first, tagged `[U]` if a newer release is available and `[I]` if not, then the rest, most popular first. The type column is left out with `-t`.
+
+If nothing matches, luma prints `No packages found.`, or nothing with `--names`, and exits with code 0.
 
 ## mods
 

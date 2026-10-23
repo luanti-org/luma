@@ -143,7 +143,7 @@ func markdownLines(text string, width int) []string {
 
 // browseStatus describes whether p is installed, and at which release.
 func (m model) browseStatus(p contentdb.Package) string {
-	release, installed := m.browseInstalled[browseKey(p.Type, p.Author, p.Name)]
+	release, installed := m.browseInstalled.Release(p)
 	switch {
 	case !installed:
 		return "not installed"
@@ -208,7 +208,7 @@ func (m model) viewBrowseDetailTop() string {
 	s += "\n"
 
 	status := m.browseStatus(p)
-	switch m.browseTag(p) {
+	switch m.browseInstalled.Tag(p) {
 	case "[U]":
 		status = browseUpdateStyle.Render(status)
 	case "[I]":
