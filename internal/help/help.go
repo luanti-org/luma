@@ -23,6 +23,9 @@ Global flags:
 `
 
 const footer = `
+Environment:
+  LUMA_LUANTI_INSTALL_DIR    the install to use without --dir or --flatpak: a path, or FLATPAK for the flatpak
+
 Run 'luma <command> --help' for its usage.
 Run with no command or only --dir to open the Terminal UI.
 `

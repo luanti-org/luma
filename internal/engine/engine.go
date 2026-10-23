@@ -14,6 +14,12 @@ import (
 	"github.com/luanti-org/luma/internal/contentdb"
 )
 
+// InstallEnv picks the install without --dir or --flatpak: a path, or InstallEnvFlatpak.
+const (
+	InstallEnv        = "LUMA_LUANTI_INSTALL_DIR"
+	InstallEnvFlatpak = "FLATPAK"
+)
+
 // ErrProtocolUnknown means the engine version was read, but the protocol table has no entry for it
 var ErrProtocolUnknown = errors.New("engine: protocol version unknown for this engine version")
 
@@ -38,37 +44,50 @@ var (
 
 // Options picks the install and how its engine version is resolved.
 type Options struct {
-	Dir           string // plain-directory install, "" means the current directory
+	Dir           string // plain-directory install, "" means InstallEnv or the current directory
 	Flatpak       bool
 	EngineVersion string // overrides the detected version. Examples: "5.17" or "5.18-dev"
 	// Versions lists ContentDB's known engine versions, only called when needed
 	Versions func() ([]contentdb.EngineVersion, error)
 }
 
-// Detect finds the install chosen by --dir/--flatpak, defaulting to the current directory.
+// Detect finds the install chosen by --dir/--flatpak, else by InstallEnv, else the current directory.
 // fatal means there is nothing usable, warn means detection succeeded but with caveats.
 func Detect(opts Options) (info Info, warn, fatal error) {
+	dir, where := opts.Dir, opts.Dir
+	hint := "use --dir or --flatpak"
+	if dir == "" && !opts.Flatpak {
+		switch env := os.Getenv(InstallEnv); env {
+		case "":
+			dir, where = ".", "the current directory"
+			hint = "use --dir, --flatpak or " + InstallEnv
+		case InstallEnvFlatpak:
+			opts.Flatpak = true
+			where = InstallEnv
+		default:
+			dir, where = env, fmt.Sprintf("%s (from %s)", env, InstallEnv)
+		}
+	}
+
 	if opts.Flatpak {
 		info, err := DetectFlatpak(DefaultFlatpakAppID)
 		if errors.Is(err, ErrFlatpakUnavailable) || errors.Is(err, ErrFlatpakAppNotFound) {
+			if where != "" {
+				err = fmt.Errorf("%w (from %s)", err, where)
+			}
 			return info, nil, err
 		}
 		return resolveVersion(opts, info, err)
 	}
 
-	dir, where := opts.Dir, opts.Dir
-	if dir == "" {
-		dir, where = ".", "the current directory"
-	}
-
 	if !dirExists(dir) {
-		return Info{}, nil, fmt.Errorf("%s is not a directory", dir)
+		return Info{}, nil, fmt.Errorf("%s is not a directory", where)
 	}
 
 	info, err := DetectDir(dir)
 	// no binary is fine for a data-only folder, but it must at least hold content
 	if errors.Is(err, ErrNoBinary) && !dirExists(info.ModsDir) && !dirExists(info.GamesDir) && !dirExists(info.TexturesDir) {
-		return info, nil, fmt.Errorf("no Luanti install in %s, use --dir or --flatpak", where)
+		return info, nil, fmt.Errorf("no Luanti install in %s, %s", where, hint)
 	}
 
 	return resolveVersion(opts, info, err)
