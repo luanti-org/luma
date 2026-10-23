@@ -43,6 +43,7 @@ func (m model) updateModDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) viewModDetail() string {
 	mod := m.selectedMod
+	help := helpLine(m.width, "d", "for dependencies", "esc/backspace", "to go back", "q", "to quit")
 
 	s := fmt.Sprintf("%s\n\n", mod.Name)
 
@@ -69,7 +70,7 @@ func (m model) viewModDetail() string {
 	} else {
 		s += fmt.Sprintln("mods:")
 
-		rows := m.listRows(10)
+		rows := m.listRows(10 + strings.Count(help, "\n"))
 		if m.modHasUpdate(mod) {
 			rows = rows - 2
 		}
@@ -113,7 +114,7 @@ func (m model) viewModDetail() string {
 		s += "\n" + util.UpdateTagStyle.Render("Update available") + "\n"
 	}
 
-	s += "\n(d for dependencies, esc/backspace to go back, q to quit)"
+	s += "\n" + help
 
 	return s
 }

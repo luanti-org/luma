@@ -46,7 +46,7 @@ func (m model) viewTexturepackDetail() string {
 		s += "\n" + util.UpdateTagStyle.Render("Update available") + "\n"
 	}
 
-	s += "\n(esc/backspace to go back, q to quit)\n"
+	s += "\n" + helpLine(m.width, "esc/backspace", "to go back", "q", "to quit") + "\n"
 
 	return s
 }

@@ -179,7 +179,11 @@ func (m model) browseTag(p contentdb.Package) string {
 
 // browseRows is how many packages fit on screen, each takes two lines.
 func (m model) browseRows() int {
-	return max(m.listRows(9)/2, 1)
+	return max(m.listRows(9+strings.Count(m.browseHelp(), "\n"))/2, 1)
+}
+
+func (m model) browseHelp() string {
+	return helpLine(m.width, "up/down/pgup/pgdown", "to move", "enter", "for details", "tab or 1-4", "to filter", "r", "to refresh", "esc/backspace", "to go back", "q", "to quit")
 }
 
 func (m model) setBrowseFilter(filter int) model {
@@ -263,7 +267,7 @@ func (m model) viewBrowse() string {
 	}
 	s += strings.Join(tabs, " ") + "\n\n"
 
-	help := "(up/down/pgup/pgdown to move, enter for details, tab or 1-4 to filter, r to refresh, esc/backspace to go back, q to quit)"
+	help := m.browseHelp()
 
 	switch {
 	case m.browsePackages == nil && m.browseLoading:

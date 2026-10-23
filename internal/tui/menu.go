@@ -138,7 +138,7 @@ func (m model) viewMenu() string {
 	if m.engWarn != nil {
 		s += wrapLabeled("warning:   ", []string{m.engWarn.Error()}, m.width)
 	}
-	s += "\n(up/down to move, enter to select, q to quit)\n"
+	s += "\n" + helpLine(m.width, "up/down", "to move", "enter", "to select", "q", "to quit") + "\n"
 
 	return s
 }

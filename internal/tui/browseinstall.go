@@ -415,7 +415,8 @@ func (m model) viewBrowseInstall() string {
 		}
 	}
 
-	space := m.listRows(9)
+	help := helpLine(m.width, "up/down", "to move", "enter", "to select", "esc/backspace", "to cancel", "q", "to quit")
+	space := m.listRows(9 + strings.Count(help, "\n"))
 	if len(body) > space {
 		hidden := len(body) - space + 1
 		body = append(body[:space-1:space-1], styledLine{text: fmt.Sprintf("  (%d more lines)", hidden)})
@@ -429,5 +430,5 @@ func (m model) viewBrowseInstall() string {
 		s += truncate(cursor(row)+" "+m.browseDialogLabel(row), m.width) + "\n"
 	}
 
-	return s + "\n(up/down to move, enter to select, esc/backspace to cancel, q to quit)"
+	return s + "\n" + help
 }

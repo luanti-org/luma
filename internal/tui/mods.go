@@ -321,7 +321,7 @@ func (m model) viewMods() string {
 
 	if m.modsErr != nil {
 		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.modsErr)) + "\n"
-		s += "\n(backspace to go back)\n"
+		s += "\n" + helpLine(m.width, "backspace", "to go back") + "\n"
 		return s
 	}
 
@@ -345,7 +345,8 @@ func (m model) viewMods() string {
 		s += "(no mods found)\n"
 	}
 
-	rows := m.listRows(7 + modsRowCount)
+	help := helpLine(m.width, "up/down", "to move", "enter", "to select", "u", "to update mod", "esc/backspace", "to go back", "q", "to quit")
+	rows := m.listRows(7 + modsRowCount + strings.Count(help, "\n"))
 	listCursor := max(m.modsCursor-modsRowCount, 0)
 	start, end := listWindow(listCursor, len(m.mods), rows)
 
@@ -387,7 +388,7 @@ func (m model) viewMods() string {
 	}
 
 	s += "\n\n(P = modpack, U = update available)\n"
-	s += "(up/down to move, enter to select, u to update mod, esc/backspace to go back, q to quit)"
+	s += help
 
 	return s
 }

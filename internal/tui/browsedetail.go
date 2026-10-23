@@ -95,7 +95,8 @@ func (m model) browseDescLines() []string {
 
 // browseDescRows is how many description lines fit below the rest of the detail screen.
 func (m model) browseDescRows() int {
-	return max(m.height-strings.Count(m.viewBrowseDetailTop(), "\n")-4, 1)
+	extra := strings.Count(m.browseDetailHelp("up/down/pgup/pgdown", "to scroll", "d", "to collapse", "esc", "to go back", "q", "to quit"), "\n")
+	return max(m.height-strings.Count(m.viewBrowseDetailTop(), "\n")-4-extra, 1)
 }
 
 func (m model) browseDescMaxScroll() int {
@@ -158,22 +159,22 @@ func (m model) viewBrowseDetail() string {
 
 	switch {
 	case m.browseDetailsLoading:
-		return s + "\nLoading...\n\n" + m.browseDetailHelp("esc/backspace to go back, q to quit")
+		return s + "\nLoading...\n\n" + m.browseDetailHelp("esc/backspace", "to go back", "q", "to quit")
 
 	case m.browseDetailsErr != nil:
 		s += "\n" + util.ErrorStyle.Render(truncate(fmt.Sprintf("error: %v", m.browseDetailsErr), m.width)) + "\n"
-		return s + "\n" + m.browseDetailHelp("r to retry, esc/backspace to go back, q to quit")
+		return s + "\n" + m.browseDetailHelp("r", "to retry", "esc/backspace", "to go back", "q", "to quit")
 	}
 
 	s += "\n"
 	switch {
 	case strings.TrimSpace(m.browseDetails.LongDescription) == "":
 		s += "description: (none)\n"
-		return s + "\n" + m.browseDetailHelp("esc/backspace to go back, q to quit")
+		return s + "\n" + m.browseDetailHelp("esc/backspace", "to go back", "q", "to quit")
 
 	case !m.browseDescOpen:
 		s += "description: (d to expand)\n"
-		return s + "\n" + m.browseDetailHelp("d to expand description, esc/backspace to go back, q to quit")
+		return s + "\n" + m.browseDetailHelp("d", "to expand description", "esc/backspace", "to go back", "q", "to quit")
 	}
 
 	lines := m.browseDescLines()
@@ -185,15 +186,15 @@ func (m model) viewBrowseDetail() string {
 		s += browseDescStyle.Render(line) + "\n"
 	}
 
-	return s + "\n" + m.browseDetailHelp("up/down/pgup/pgdown to scroll, d to collapse, esc to go back, q to quit")
+	return s + "\n" + m.browseDetailHelp("up/down/pgup/pgdown", "to scroll", "d", "to collapse", "esc", "to go back", "q", "to quit")
 }
 
 // browseDetailHelp is the help line with keys, plus the install key when it applies.
-func (m model) browseDetailHelp(keys string) string {
+func (m model) browseDetailHelp(pairs ...string) string {
 	if m.browseInstallable(m.browseSelected) && !m.busy() && !m.browseResolving {
-		keys = "i to install, " + keys
+		pairs = append([]string{"i", "to install"}, pairs...)
 	}
-	return "(" + keys + ")"
+	return helpLine(m.width, pairs...)
 }
 
 // viewBrowseDetailTop renders the detail screen down to the links, or to the status while there are no details.

@@ -240,7 +240,7 @@ func (m model) viewGames() string {
 
 	if m.gamesErr != nil {
 		s += util.ErrorStyle.Render(fmt.Sprintf("error: %v", m.gamesErr)) + "\n"
-		s += "\n(esc/backspace to go back, q to quit)\n"
+		s += "\n" + helpLine(m.width, "esc/backspace", "to go back", "q", "to quit") + "\n"
 		return s
 	}
 
@@ -264,7 +264,8 @@ func (m model) viewGames() string {
 		s += "(no games found)\n"
 	}
 
-	rows := m.listRows(7 + gamesRowCount)
+	help := helpLine(m.width, "up/down", "to move", "enter", "to select", "u", "to update game", "esc/backspace", "to go back", "q", "to quit")
+	rows := m.listRows(7 + gamesRowCount + strings.Count(help, "\n"))
 	listCursor := max(m.gamesCursor-gamesRowCount, 0)
 	start, end := listWindow(listCursor, len(m.games), rows)
 
@@ -307,7 +308,7 @@ func (m model) viewGames() string {
 	}
 
 	s += "\n\n(! = no valid game.conf, title guessed from folder, U = update available)\n"
-	s += "(up/down to move, enter to select, u to update game, esc/backspace to go back, q to quit)"
+	s += help
 
 	return s
 }
