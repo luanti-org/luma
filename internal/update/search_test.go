@@ -46,3 +46,30 @@ func TestMatchPackages(t *testing.T) {
 		})
 	}
 }
+
+func TestInstalledReleasesTagAndOrder(t *testing.T) {
+	installed := InstalledReleases{
+		installedKey("mod", "jane", "zeta"):   3,
+		installedKey("mod", "jane", "alpha"):  5,
+		installedKey("mod", "Bob", "beta"):    1,
+		installedKey("game", "jane", "gamma"): 2,
+	}
+	packages := []contentdb.Package{
+		{Author: "amy", Name: "popular", Title: "Popular", Type: "mod", Release: 1},
+		{Author: "jane", Name: "zeta", Title: "Zeta", Type: "mod", Release: 3},
+		{Author: "jane", Name: "gamma", Title: "Gamma", Type: "mod", Release: 9},
+		{Author: "jane", Name: "alpha", Title: "Alpha", Type: "mod", Release: 5},
+		{Author: "bob", Name: "beta", Title: "Beta", Type: "mod", Release: 4},
+		{Author: "amy", Name: "less", Title: "Less", Type: "mod", Release: 1},
+	}
+
+	var got []string
+	for _, p := range installed.InstalledFirst(packages) {
+		got = append(got, installed.Tag(p)+p.Name)
+	}
+	// gamma is only installed as a game, author is case-insensitive
+	want := []string{"[U]beta", "[I]alpha", "[I]zeta", "popular", "gamma", "less"}
+	if !slices.Equal(got, want) {
+		t.Errorf("InstalledFirst = %v, want %v", got, want)
+	}
+}

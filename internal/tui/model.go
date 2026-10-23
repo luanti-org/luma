@@ -153,10 +153,10 @@ type model struct {
 	browseRetry     int // retries of the current fetch so far
 	browseFilter    int // index into browseFilters
 	browseCursor    int
-	browseInstalled map[string]int // release by browseKey, scanned on each visit
-	browseQuery     string         // filters every tab, see update.MatchPackages
-	browseTyping    bool           // keys go to the search line
-	browseQueryPos  int            // text cursor, in runes into browseQuery
+	browseInstalled update.InstalledReleases // scanned on each visit
+	browseQuery     string                   // filters every tab, see update.MatchPackages
+	browseTyping    bool                     // keys go to the search line
+	browseQueryPos  int                      // text cursor, in runes into browseQuery
 
 	browseSelected       contentdb.Package
 	browseDetails        *contentdb.PackageDetails

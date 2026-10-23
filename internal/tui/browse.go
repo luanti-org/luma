@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -10,7 +9,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/luanti-org/luma/internal/content"
 	"github.com/luanti-org/luma/internal/contentdb"
 	"github.com/luanti-org/luma/internal/update"
 	"github.com/luanti-org/luma/internal/util"
@@ -56,7 +54,7 @@ type browseRetryMsg struct {
 // openBrowse shows the browse screen, fetching the package list on the first visit.
 func (m model) openBrowse() (tea.Model, tea.Cmd) {
 	m.screen = screenBrowse
-	m.browseInstalled = m.scanInstalledReleases()
+	m.browseInstalled = update.ScanInstalledReleases(m.engInfo)
 
 	if m.browsePackages != nil || m.browseLoading {
 		return m, nil
@@ -104,77 +102,10 @@ func (m model) handleBrowseRetry(msg browseRetryMsg) (tea.Model, tea.Cmd) {
 	return m, m.fetchBrowseCmd(msg.maxAge)
 }
 
-// browseKey is how scanInstalledReleases keys installed content.
-func browseKey(pkgType, author, name string) string {
-	return pkgType + " " + strings.ToLower(author+"/"+name)
-}
-
-// scanInstalledReleases returns the release of each installed package that names its author.
-// Scan errors only cost the installed markers, so they are ignored.
-func (m model) scanInstalledReleases() map[string]int {
-	installed := make(map[string]int)
-
-	mods, _ := content.ScanMods(m.engInfo.ModsDir)
-	for _, mod := range mods {
-		if mod.Author != "" {
-			installed[browseKey("mod", mod.Author, mod.Name)] = mod.Release
-		}
-	}
-
-	games, _ := content.ScanGames(m.engInfo.GamesDir)
-	for _, g := range games {
-		if g.Author != "" {
-			installed[browseKey("game", g.Author, g.ID)] = g.Release
-		}
-	}
-
-	texturepacks, _ := content.ScanTextures(m.engInfo.TexturesDir)
-	for _, tp := range texturepacks {
-		if tp.Author != "" {
-			installed[browseKey("txp", tp.Author, tp.Name)] = tp.Release
-		}
-	}
-
-	return installed
-}
-
-// browseList returns the packages the current type tab shows that match the search, ordered like the client:
-// installed first, those with an update before the rest, by title, then the others in ContentDB's order.
+// browseList returns the packages the current type tab shows that match the search, installed first like the client.
 func (m model) browseList() []contentdb.Package {
 	pkgType := browseFilters[m.browseFilter].pkgType
-
-	var installed, rest []contentdb.Package
-	for _, p := range update.MatchPackages(m.browsePackages, m.browseQuery, pkgType) {
-		if m.browseTag(p) != "" {
-			installed = append(installed, p)
-		} else {
-			rest = append(rest, p)
-		}
-	}
-
-	slices.SortStableFunc(installed, func(a, b contentdb.Package) int {
-		if au, bu := m.browseTag(a) == "[U]", m.browseTag(b) == "[U]"; au != bu {
-			if au {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a.Title, b.Title)
-	})
-
-	return append(installed, rest...)
-}
-
-// browseTag returns "[U]" for an installed package with a newer release, "[I]" for one without, else "".
-func (m model) browseTag(p contentdb.Package) string {
-	release, installed := m.browseInstalled[browseKey(p.Type, p.Author, p.Name)]
-	switch {
-	case installed && release < p.Release:
-		return "[U]"
-	case installed:
-		return "[I]"
-	}
-	return ""
+	return m.browseInstalled.InstalledFirst(update.MatchPackages(m.browsePackages, m.browseQuery, pkgType))
 }
 
 // browseRows is how many packages fit on screen, each takes two lines.
@@ -392,7 +323,7 @@ func (m model) viewBrowse() string {
 			cursor = ">"
 		}
 
-		tag := m.browseTag(p)
+		tag := m.browseInstalled.Tag(p)
 		if tag == "" {
 			tag = "   "
 		}

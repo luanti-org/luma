@@ -51,7 +51,7 @@ func packageID(p contentdb.Package) string {
 func (m model) browseInstallable(p contentdb.Package) bool {
 	switch p.Type {
 	case "mod", "game", "txp":
-		return m.browseTag(p) == ""
+		return m.browseInstalled.Tag(p) == ""
 	}
 	return false
 }
@@ -272,7 +272,7 @@ func (m model) handleBrowseInstallStep(msg browseInstallStepMsg) (tea.Model, tea
 	m.browseInstalling = false
 	m.browseInstallErr = msg.err
 	m.browseRun = nil
-	m.browseInstalled = m.scanInstalledReleases()
+	m.browseInstalled = update.ScanInstalledReleases(m.engInfo)
 	return m, nil
 }
 
