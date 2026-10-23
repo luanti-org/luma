@@ -52,6 +52,15 @@ Selecting a package shows:
 
 Press `d` to expand or collapse the full description, and `up` / `down` to scroll it.
 
+### Installing
+
+Press `i` on a package that isn't installed:
+
+* games, texture packs and mods with no dependencies install right away
+* other mods first show what will be installed, hard dependencies included, and their missing optional dependencies
+* **Base game for dependencies** is the same choice as on the [mods screen](#base-game), changing it in either place changes both
+* if any part of the install fails, everything it installed is removed
+
 ## Mods
 
 The mods screen lists the installed mods and modpacks, below three actions:

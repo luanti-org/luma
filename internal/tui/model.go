@@ -37,6 +37,7 @@ const (
 	screenTexturepackDetail
 	screenBrowse
 	screenBrowseDetail
+	screenBrowseInstall
 )
 
 // Used until the first tea.WindowSizeMsg arrives.
@@ -95,6 +96,7 @@ type model struct {
 	pickerGames  []content.Game
 	pickerErr    error
 	pickerCursor int
+	pickerReturn screen // shown again when the picker closes
 
 	modsResolving  bool
 	modsResolveErr error
@@ -159,6 +161,19 @@ type model struct {
 	browseDetailsErr     error
 	browseDescOpen       bool // long description expanded
 	browseDescScroll     int  // first long description line shown
+
+	browseInstallPkg   contentdb.Package // of the current or last install
+	browseResolving    bool
+	browseResolveErr   error
+	browsePlan         update.DepPlan
+	browseOptional     []update.ModDep
+	browseDialogCursor int
+	browseInstalling   bool
+	browseRun          *update.InstallRun
+	browseRunQueue     []browseRunStep
+	browseRunIdx       int // steps completed so far
+	browseInstallErr   error
+	browseMissing      []update.MissingDep // required dependencies the last run left out
 
 	bulbOn        bool
 	bulbStuttered bool // the current on stretch is the short gap inside a dip
@@ -270,6 +285,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBrowseDetails(detailsMsg)
 	}
 
+	if resolvedMsg, ok := msg.(browseResolvedMsg); ok {
+		return m.handleBrowseResolved(resolvedMsg)
+	}
+
+	if stepMsg, ok := msg.(browseInstallStepMsg); ok {
+		return m.handleBrowseInstallStep(stepMsg)
+	}
+
 	keyMsg, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return m, nil
@@ -310,6 +333,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBrowse(keyMsg)
 	case screenBrowseDetail:
 		return m.updateBrowseDetail(keyMsg)
+	case screenBrowseInstall:
+		return m.updateBrowseInstall(keyMsg)
 	}
 
 	return m, nil
@@ -341,6 +366,8 @@ func (m model) View() string {
 		return m.viewBrowse()
 	case screenBrowseDetail:
 		return m.viewBrowseDetail()
+	case screenBrowseInstall:
+		return m.viewBrowseInstall()
 	default:
 		return m.viewMenu()
 	}
@@ -348,7 +375,7 @@ func (m model) View() string {
 
 // busy reports whether a mod, game or texture pack check/update is running, only one runs at a time
 func (m model) busy() bool {
-	return m.modActionInProgress || m.gameActionInProgress || m.texturepackActionInProgress
+	return m.modActionInProgress || m.gameActionInProgress || m.texturepackActionInProgress || m.browseInstalling
 }
 
 // listRows is how many list rows fit once chrome lines are reserved

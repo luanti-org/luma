@@ -60,6 +60,9 @@ func (m model) updateBrowseDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openBrowseDetail(m.browseSelected)
 		}
 
+	case "i":
+		return m.startBrowseInstall(m.browseSelected)
+
 	case "d":
 		if m.browseDetails != nil {
 			m.browseDescOpen = !m.browseDescOpen
@@ -155,22 +158,22 @@ func (m model) viewBrowseDetail() string {
 
 	switch {
 	case m.browseDetailsLoading:
-		return s + "\nLoading...\n\n(esc/backspace to go back, q to quit)"
+		return s + "\nLoading...\n\n" + m.browseDetailHelp("esc/backspace to go back, q to quit")
 
 	case m.browseDetailsErr != nil:
 		s += "\n" + util.ErrorStyle.Render(truncate(fmt.Sprintf("error: %v", m.browseDetailsErr), m.width)) + "\n"
-		return s + "\n(r to retry, esc/backspace to go back, q to quit)"
+		return s + "\n" + m.browseDetailHelp("r to retry, esc/backspace to go back, q to quit")
 	}
 
 	s += "\n"
 	switch {
 	case strings.TrimSpace(m.browseDetails.LongDescription) == "":
 		s += "description: (none)\n"
-		return s + "\n(esc/backspace to go back, q to quit)"
+		return s + "\n" + m.browseDetailHelp("esc/backspace to go back, q to quit")
 
 	case !m.browseDescOpen:
 		s += "description: (d to expand)\n"
-		return s + "\n(d to expand description, esc/backspace to go back, q to quit)"
+		return s + "\n" + m.browseDetailHelp("d to expand description, esc/backspace to go back, q to quit")
 	}
 
 	lines := m.browseDescLines()
@@ -182,7 +185,15 @@ func (m model) viewBrowseDetail() string {
 		s += browseDescStyle.Render(line) + "\n"
 	}
 
-	return s + "\n(up/down/pgup/pgdown to scroll, d to collapse, esc to go back, q to quit)"
+	return s + "\n" + m.browseDetailHelp("up/down/pgup/pgdown to scroll, d to collapse, esc to go back, q to quit")
+}
+
+// browseDetailHelp is the help line with keys, plus the install key when it applies.
+func (m model) browseDetailHelp(keys string) string {
+	if m.browseInstallable(m.browseSelected) && !m.busy() && !m.browseResolving {
+		keys = "i to install, " + keys
+	}
+	return "(" + keys + ")"
 }
 
 // viewBrowseDetailTop renders the detail screen down to the links, or to the status while there are no details.
@@ -196,10 +207,14 @@ func (m model) viewBrowseDetailTop() string {
 	s += "\n"
 
 	status := m.browseStatus(p)
-	if m.browseTag(p) == "[U]" {
+	switch m.browseTag(p) {
+	case "[U]":
 		status = browseUpdateStyle.Render(status)
+	case "[I]":
+		status = browseInstalledStyle.Render(status)
 	}
 	s += "status:      " + status + "\n"
+	s += m.browseInstallLines()
 
 	d := m.browseDetails
 	if d == nil {
