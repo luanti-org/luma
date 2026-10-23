@@ -21,7 +21,7 @@ import (
 const engineVersionsTimeout = 15 * time.Second
 
 func main() {
-	root := pflag.StringP("dir", "d", "", "path to the Luanti install. Defaults to the current directory.")
+	root := pflag.StringP("dir", "d", "", "path to the Luanti install. Defaults to "+engine.InstallEnv+" if set, else the current directory.")
 	flatpak := pflag.Bool("flatpak", false, "use the Luanti flatpak install ("+engine.DefaultFlatpakAppID+")")
 	engineVersion := pflag.StringP("engine-version", "e", "", "override the detected engine version, e.g. 5.17. Use only if detection fails or you know what you're doing")
 	showVersion := pflag.Bool("version", false, "print the luma version and exit")

@@ -6,7 +6,7 @@ Global flags apply to both the terminal UI and the command line. They go before 
 
 | flag | meaning |
 |---|---|
-| `--dir <path>`, `-d <path>` | use the Luanti install at `<path>`, defaults to the current directory |
+| `--dir <path>`, `-d <path>` | use the Luanti install at `<path>`, defaults to [`LUMA_LUANTI_INSTALL_DIR`](#luma_luanti_install_dir) if set, else the current directory |
 | `--flatpak` | use the Luanti flatpak install |
 | `--engine-version <version>`, `-e <version>` | override the detected engine version |
 | `--version` | print the luma version and exit |
@@ -15,10 +15,20 @@ Global flags apply to both the terminal UI and the command line. They go before 
 
 ## No flags
 
-Without `--dir` or `--flatpak`, the current directory is assumed to be the Luanti install, so luma can be run with no arguments from inside it:
+Without `--dir` or `--flatpak`, the install is the one in [`LUMA_LUANTI_INSTALL_DIR`](#luma_luanti_install_dir) if set, else the current directory, so luma can be run with no arguments from inside it:
 
     cd /path/to/luanti
     luma
+
+## LUMA_LUANTI_INSTALL_DIR
+
+Sets the install to use when neither `--dir` nor `--flatpak` is given, so luma can be run from anywhere:
+
+    export LUMA_LUANTI_INSTALL_DIR=/path/to/luanti   # as --dir /path/to/luanti
+    export LUMA_LUANTI_INSTALL_DIR=FLATPAK           # as --flatpak
+
+* a relative path is relative to the current directory. A folder named `FLATPAK` must be given as `./FLATPAK`
+* it is used even when the current directory holds an install, pass `--dir .` to use that one instead
 
 ## --dir
 

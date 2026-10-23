@@ -141,10 +141,71 @@ func TestDetectEmptyDir(t *testing.T) {
 }
 
 func TestDetectEmptyCurrentDir(t *testing.T) {
+	t.Setenv(InstallEnv, "")
 	t.Chdir(t.TempDir())
 	_, _, fatal := Detect(Options{})
-	if fatal == nil || !strings.Contains(fatal.Error(), "the current directory") {
-		t.Errorf("fatal = %v, want it to name the current directory", fatal)
+	if fatal == nil || !strings.Contains(fatal.Error(), "the current directory") || !strings.Contains(fatal.Error(), InstallEnv) {
+		t.Errorf("fatal = %v, want it to name the current directory and suggest %s", fatal, InstallEnv)
+	}
+}
+
+func TestDetectInstallEnv(t *testing.T) {
+	dir := newDataOnlyDir(t)
+	t.Setenv(InstallEnv, dir)
+	// the current directory is an install too, the variable wins over it
+	t.Chdir(newDataOnlyDir(t))
+
+	info, _, fatal := Detect(Options{EngineVersion: "5.17", Versions: fakeVersions(nil)})
+	if fatal != nil || info.ModsDir != filepath.Join(dir, "mods") {
+		t.Errorf("info = %+v, fatal = %v, want the %s install", info, fatal, InstallEnv)
+	}
+}
+
+func TestDetectInstallEnvRelative(t *testing.T) {
+	dir := newDataOnlyDir(t)
+	t.Setenv(InstallEnv, filepath.Base(dir))
+	t.Chdir(filepath.Dir(dir))
+
+	info, _, fatal := Detect(Options{EngineVersion: "5.17", Versions: fakeVersions(nil)})
+	if fatal != nil || info.ModsDir != filepath.Join(dir, "mods") {
+		t.Errorf("info = %+v, fatal = %v, want the install in %s", info, fatal, dir)
+	}
+}
+
+func TestDetectDirOverridesInstallEnv(t *testing.T) {
+	t.Setenv(InstallEnv, filepath.Join(t.TempDir(), "nope"))
+	dir := newDataOnlyDir(t)
+
+	info, _, fatal := Detect(Options{Dir: dir, EngineVersion: "5.17", Versions: fakeVersions(nil)})
+	if fatal != nil || info.ModsDir != filepath.Join(dir, "mods") {
+		t.Errorf("info = %+v, fatal = %v, want the --dir install", info, fatal)
+	}
+}
+
+func TestDetectInstallEnvMissingDir(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "nope")
+	t.Setenv(InstallEnv, missing)
+
+	_, _, fatal := Detect(Options{})
+	if want := missing + " (from " + InstallEnv + ") is not a directory"; fatal == nil || fatal.Error() != want {
+		t.Errorf("fatal = %v, want %q", fatal, want)
+	}
+}
+
+func TestDetectInstallEnvFlatpak(t *testing.T) {
+	t.Setenv(InstallEnv, InstallEnvFlatpak)
+	t.Chdir(newDataOnlyDir(t))
+
+	info, _, fatal := Detect(Options{EngineVersion: "5.17", Versions: fakeVersions(nil)})
+	switch {
+	case errors.Is(fatal, ErrFlatpakUnavailable) || errors.Is(fatal, ErrFlatpakAppNotFound):
+		if !strings.Contains(fatal.Error(), InstallEnv) {
+			t.Errorf("fatal = %v, want it to name %s", fatal, InstallEnv)
+		}
+	case fatal != nil:
+		t.Errorf("fatal = %v", fatal)
+	case !info.ViaFlatpak:
+		t.Errorf("info = %+v, want the flatpak install", info)
 	}
 }
 
