@@ -6,21 +6,23 @@ The tool covers the ContentDB and world/server management side of Luanti dev too
 
 ## Content (mods, games, texture packs)
 
-- **Local listing**: scan installed mods and games and show them in the UI
-- **Installed-content record**: - TBD, not rushing this - a small local file noting where each mod came from (ContentDB, git, or placed by hand), so updates work and unmanaged mods are left alone. It also caches ContentDB info so installs and updates still work offline for known mods.
+- [DONE] **Local listing**: scan installed mods and games, allow installation from CDB.
+- **Git updates**: allow handling of mods/games/txp that have a .git folder.
 
 - **ContentDB package management**
-  - Search ContentDB for mods, games and texture packs
-  - Show a package's ContentDB details (description, license, content warnings, links) from the CLI
-  - Install a package along with its dependencies
+  - [DONE] Search ContentDB for mods, games and texture packs
+  - [DONE] Show a package's ContentDB details (description, license, content warnings, links)
+  - [DONE] Install a package along with its dependencies
   - Choose the ContentDB URL, so a mirror can be used
   - Optional "git mode": install and update a mod from its git repository instead of a release zip
-  - Check installed content for updates
+  - [DONE] Check installed content for updates
+  - Uninstall mods smartly (e.g. if a dep of other mods or used in worlds warn)
 
-- **Games**: list, search and install/uninstall games from ContentDB
+- **Games**
+  - [DONE] list, search and install games from ContentDB
 
-- **Texture packs**: install/uninstall a texture pack and enable it for a world or server
-  - Possibly support merging texturepacks manually until engine support comes in
+- **Texture packs**
+  - [DONE] install a texture pack from CDB
 
 ## Worlds and servers
 
@@ -33,7 +35,8 @@ The tool covers the ContentDB and world/server management side of Luanti dev too
   - Read a mod's `settingtypes.txt`
   - Edit its values in a form and write them to the right config file
 
-- **Non-interactive CLI**: an `apt-get` style command line alongside the terminal UI
+- **Non-interactive CLI**
+  - [DONE] `apt-get` style command line alongside the terminal UI
 
 ## Later
 
