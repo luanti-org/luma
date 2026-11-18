@@ -46,25 +46,25 @@ func main() {
 		os.Exit(2)
 	}
 
-	cdb := contentdb.New("")
-	cdb.HTTPClient = &http.Client{Timeout: engineVersionsTimeout}
-
-	engineInfo, warn, fatal := engine.Detect(engine.Options{
-		Dir:           *root,
-		Flatpak:       *flatpak,
-		EngineVersion: *engineVersion,
-		Versions:      cdb.EngineVersions,
-	})
-	if fatal != nil {
-		fmt.Fprintln(os.Stderr, "luma:", fatal)
-		os.Exit(1)
+	detect := func() (engine.Info, error, error) {
+		cdb := contentdb.New("")
+		cdb.HTTPClient = &http.Client{Timeout: engineVersionsTimeout}
+		return engine.Detect(engine.Options{
+			Dir:           *root,
+			Flatpak:       *flatpak,
+			EngineVersion: *engineVersion,
+			Versions:      cdb.EngineVersions,
+		})
 	}
 
 	if pflag.NArg() > 0 {
-		if warn != nil {
-			fmt.Fprintln(os.Stderr, "luma: warning:", warn)
-		}
-		os.Exit(cli.Run(pflag.Args(), engineInfo, os.Stdout, os.Stderr))
+		os.Exit(cli.Run(pflag.Args(), detect, os.Stdout, os.Stderr))
+	}
+
+	engineInfo, warn, fatal := detect()
+	if fatal != nil {
+		fmt.Fprintln(os.Stderr, "luma:", fatal)
+		os.Exit(1)
 	}
 
 	p := tea.NewProgram(tui.New(engineInfo, warn), tea.WithAltScreen())
