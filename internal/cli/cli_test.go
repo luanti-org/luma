@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
@@ -111,5 +112,69 @@ func TestTopLevelNotNouns(t *testing.T) {
 		if _, ok := aliases[name]; ok {
 			t.Errorf("%q is both a top-level command and a noun alias", name)
 		}
+	}
+}
+
+func TestHelpAndUsageErrorsSkipDetection(t *testing.T) {
+	tests := []struct {
+		args []string
+		code int
+	}{
+		{[]string{"mods"}, exitUsage},
+		{[]string{"mods", "--help"}, exitOK},
+		{[]string{"mods", "update", "--help"}, exitOK},
+		{[]string{"install", "-h"}, exitOK},
+		{[]string{"mods", "list", "--bogus"}, exitUsage},
+		{[]string{"mods", "list", "extra"}, exitUsage},
+		{[]string{"mods", "bogus"}, exitUsage},
+		{[]string{"mdos", "list"}, exitUsage},
+	}
+	for _, tt := range tests {
+		t.Run(strings.Join(tt.args, " "), func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			detect := func() (engine.Info, error, error) {
+				t.Fatal("engine detection ran")
+				return engine.Info{}, nil, nil
+			}
+			c := &ctx{detect: detect, stdout: &out, stderr: &errOut}
+			if code := c.run(tt.args); code != tt.code {
+				t.Errorf("exit code = %d, want %d, stderr: %s", code, tt.code, errOut.String())
+			}
+		})
+	}
+}
+
+func TestDetectionErrors(t *testing.T) {
+	var out, errOut bytes.Buffer
+	calls := 0
+	detect := func() (engine.Info, error, error) {
+		calls++
+		return engine.Info{}, nil, errors.New("no Luanti install in the current directory")
+	}
+	c := &ctx{detect: detect, stdout: &out, stderr: &errOut}
+
+	if code := c.run([]string{"mods", "list"}); code != exitError {
+		t.Errorf("exit code = %d, want %d", code, exitError)
+	}
+	if calls != 1 {
+		t.Errorf("detect called %d times, want 1", calls)
+	}
+	if got := errOut.String(); got != "luma: no Luanti install in the current directory\n" {
+		t.Errorf("stderr = %q", got)
+	}
+}
+
+func TestDetectionWarning(t *testing.T) {
+	var out, errOut bytes.Buffer
+	detect := func() (engine.Info, error, error) {
+		return engine.Info{ModsDir: t.TempDir()}, errors.New("version unknown"), nil
+	}
+	c := &ctx{detect: detect, stdout: &out, stderr: &errOut}
+
+	if code := c.run([]string{"mods", "list"}); code != exitOK {
+		t.Errorf("exit code = %d, want %d, stderr: %s", code, exitOK, errOut.String())
+	}
+	if !strings.HasPrefix(errOut.String(), "luma: warning: version unknown\n") {
+		t.Errorf("stderr = %q", errOut.String())
 	}
 }

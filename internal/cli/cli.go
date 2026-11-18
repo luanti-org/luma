@@ -28,8 +28,12 @@ const (
 
 const cdbRequestTimeout = 30 * time.Second
 
+// DetectFunc finds the Luanti install, with the same results as engine.Detect.
+type DetectFunc func() (info engine.Info, warn, fatal error)
+
 type ctx struct {
 	eng    engine.Info
+	detect DetectFunc // nil once eng is set
 	cdb    *contentdb.Client
 	stdout io.Writer
 	stderr io.Writer
@@ -118,11 +122,12 @@ func Commands() []Command {
 }
 
 // Run executes the command in args and returns the process exit code.
-func Run(args []string, eng engine.Info, stdout, stderr io.Writer) int {
+// detect runs only once a command has parsed its flags, so help and usage errors work outside an install.
+func Run(args []string, detect DetectFunc, stdout, stderr io.Writer) int {
 	cdb := contentdb.New("")
 	cdb.HTTPClient = &http.Client{Timeout: cdbRequestTimeout} // don't share/mutate http.DefaultClient
 
-	c := &ctx{eng: eng, cdb: cdb, stdout: stdout, stderr: stderr, stdin: os.Stdin}
+	c := &ctx{detect: detect, cdb: cdb, stdout: stdout, stderr: stderr, stdin: os.Stdin}
 	c.interactive = isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
 
 	return c.run(args)
@@ -209,7 +214,7 @@ func (c *ctx) err(format string, a ...any) int {
 // parseFlags parses a subcommand's flags and rejects positional args.
 // done is true when the caller should return code immediately.
 func (c *ctx) parseFlags(fs *pflag.FlagSet, args []string) (code int, done bool) {
-	if code, done := c.parseFlagsWithArgs(fs, args); done {
+	if code, done := c.parseOnly(fs, args); done {
 		return code, true
 	}
 
@@ -217,11 +222,39 @@ func (c *ctx) parseFlags(fs *pflag.FlagSet, args []string) (code int, done bool)
 		return c.usageErr("%s: unexpected arguments %q", fs.Name(), fs.Args()), true
 	}
 
-	return exitOK, false
+	return c.loadEngine()
 }
 
 // parseFlagsWithArgs is parseFlags for commands that take positional args, left in fs.Args().
 func (c *ctx) parseFlagsWithArgs(fs *pflag.FlagSet, args []string) (code int, done bool) {
+	if code, done := c.parseOnly(fs, args); done {
+		return code, true
+	}
+
+	return c.loadEngine()
+}
+
+// loadEngine runs the engine detection once, printing its warning or fatal error.
+func (c *ctx) loadEngine() (code int, done bool) {
+	if c.detect == nil {
+		return exitOK, false
+	}
+
+	eng, warn, fatal := c.detect()
+	c.detect = nil
+	if fatal != nil {
+		fmt.Fprintln(c.stderr, "luma:", fatal)
+		return exitError, true
+	}
+	if warn != nil {
+		fmt.Fprintln(c.stderr, "luma: warning:", warn)
+	}
+	c.eng = eng
+
+	return exitOK, false
+}
+
+func (c *ctx) parseOnly(fs *pflag.FlagSet, args []string) (code int, done bool) {
 	fs.SetOutput(c.stderr)
 
 	if err := CheckFlagStyle(fs, args); err != nil {
