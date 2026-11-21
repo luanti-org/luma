@@ -1,5 +1,6 @@
 ---
 title: Command line
+editURL: https://github.com/luanti-org/luma/edit/main/docs/cli.md
 ---
 
 Passing a command runs it without opening the terminal UI. Commands for installed content are `<noun> <verb>`, [install](#install) and [search](#search) have no noun:
@@ -16,7 +17,7 @@ Global flags such as `--dir` go before the command, see [Global flags](../global
 ## Help
 
 | command | shows |
-|---|---|
+| --- | --- |
 | `luma --help` | global flags, commands and command groups |
 | `luma mods --help` | the commands of a group |
 | `luma mods update --help`, `luma install --help` | the flags of a command |
@@ -24,7 +25,7 @@ Global flags such as `--dir` go before the command, see [Global flags](../global
 ## Exit codes
 
 | code | meaning |
-|---|---|
+| --- | --- |
 | 0 | success |
 | 1 | error |
 | 2 | usage error, e.g. unknown command or flag |
@@ -58,7 +59,7 @@ Installs mods, modpacks, games and texture packs from ContentDB, at their newest
     luma install -l ./mineclonia-main --name mineclonia   # into the folder mineclonia
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `-n`, `--dry-run` | show what would be installed without changing anything |
 | `-y`, `--yes` | install dependencies without asking |
 | `--no-deps` | don't install the dependencies of mods |
@@ -129,7 +130,7 @@ Lists the ContentDB packages compatible with the engine that match every word, t
     luma search --names farming   # only author/name, one per line
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `-t`, `--type` | only packages of this type: `mod`, `game` or `txp`, or `m`, `g`, `t`, `texturepack` |
 | `--names` | print only `author/name`, one per line |
 | `-r`, `--refresh` | fetch the package list again instead of using the [cache](#cache) |
@@ -170,7 +171,7 @@ Updates the named mods, or all outdated mods if none are named, replacing each m
     luma mods update --game mineclonia   # dependencies mineclonia provides are not installed
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `-n`, `--dry-run` | show what would be updated and installed without changing anything |
 | `-x`, `--exclude` | comma-separated mod names to skip |
 | `-y`, `--yes` | install new dependencies without asking |
@@ -211,7 +212,7 @@ Lists the required dependencies of an installed mod, or the optional ones with `
     luma mods list-deps --names mesecons
 
 | status | meaning |
-|---|---|
+| --- | --- |
 | `installed` | a mod of that name is installed |
 | `available` | not installed, the package shown would provide it |
 | `from game` | not installed, only games on ContentDB provide it |
@@ -219,7 +220,7 @@ Lists the required dependencies of an installed mod, or the optional ones with `
 | `ambiguous` | not installed, several packages provide it and none was picked (see below) |
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `--optional` | list the optional dependencies instead of the required ones |
 | `--names` | print only the dependency names, one per line |
 | `--game` | count this game's mods as installed |
@@ -237,7 +238,7 @@ Installs the missing required dependencies of an installed mod, or its `availabl
     luma mods install-deps -n mesecons             # show what would be installed
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `--optional` | install the optional dependencies instead of the required ones |
 | `-n`, `--dry-run` | show what would be installed without changing anything |
 | `-y`, `--yes` | install without asking |
@@ -280,7 +281,7 @@ Updates the named games, or all outdated games if none are named. The game's fol
     luma games update -n                # show what would be updated
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `-n`, `--dry-run` | show what would be updated without changing anything |
 | `-x`, `--exclude` | comma-separated game folder names to skip |
 
@@ -319,7 +320,7 @@ Updates the named texture packs, or all outdated texture packs if none are named
     luma texturepacks update -n                # show what would be updated
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `-n`, `--dry-run` | show what would be updated without changing anything |
 | `-x`, `--exclude` | comma-separated texture pack names to skip |
 
