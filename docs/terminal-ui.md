@@ -1,5 +1,6 @@
 ---
 title: Terminal UI
+editURL: https://github.com/luanti-org/luma/edit/main/docs/terminal-ui.md
 ---
 
 Running luma without a command opens the terminal UI:
@@ -12,7 +13,7 @@ The main menu shows the folders and engine version in use, and leads to the Cont
 ## General keys
 
 | key | action |
-|---|---|
+| --- | --- |
 | `up` / `k`, `down` / `j` | move |
 | `enter` / `space` | select, or open details |
 | `esc` / `backspace` | go back |
@@ -30,12 +31,12 @@ Lists the ContentDB packages compatible with the engine:
 * fetched on first opening, or taken from the [cache](../cli#cache) if under 10 minutes old
 
 | tag | meaning |
-|---|---|
+| --- | --- |
 | `[U]` | installed, update available |
 | `[I]` | installed |
 
 | key | action |
-|---|---|
+| --- | --- |
 | `tab` / `shift+tab`, `1`-`4` | filter by type |
 | `pgup` / `pgdown`, `home` / `end` | move by page, to the start or end |
 | `r` | fetch the list again |
@@ -85,7 +86,7 @@ The mods screen lists the installed mods and modpacks, below three actions:
 * **Base game for dependencies** picks the game the mods are used with
 
 | tag | meaning |
-|---|---|
+| --- | --- |
 | `[U]` | update available |
 | `[P]` | modpack |
 
@@ -127,7 +128,7 @@ Press `d` to open the dependencies screen of the mod or modpack.
 Lists the required dependencies of a mod, then the optional ones, as ContentDB gives them for its latest release, each with a status:
 
 | status | meaning |
-|---|---|
+| --- | --- |
 | `installed` | a mod of that name is installed |
 | `available` | not installed, the package shown would provide it |
 | `from game` | not installed, only games on ContentDB provide it |
@@ -152,7 +153,7 @@ The games screen lists the installed games, below two actions:
 * **Update all** updates every game found by the last check
 
 | tag | meaning |
-|---|---|
+| --- | --- |
 | `[U]` | update available |
 | `[!]` | no valid `game.conf`, title guessed from the folder name |
 
@@ -170,7 +171,7 @@ The texture packs screen lists the installed texture packs, below two actions:
 * **Update all** updates every texture pack found by the last check
 
 | tag | meaning |
-|---|---|
+| --- | --- |
 | `[U]` | update available |
 | `[!]` | no valid `texture_pack.conf`, name guessed from the folder name |
 

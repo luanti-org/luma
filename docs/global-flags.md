@@ -1,11 +1,12 @@
 ---
 title: Global flags
+editURL: https://github.com/luanti-org/luma/edit/main/docs/global-flags.md
 ---
 
 Global flags apply to both the terminal UI and the command line. They go before any command:
 
 | flag | meaning |
-|---|---|
+| --- | --- |
 | `--dir <path>`, `-d <path>` | use the Luanti install at `<path>`, defaults to [`LUMA_LUANTI_INSTALL_DIR`](#luma_luanti_install_dir) if set, else the current directory |
 | `--flatpak` | use the Luanti flatpak install |
 | `--engine-version <version>`, `-e <version>` | override the detected engine version |

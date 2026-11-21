@@ -1,6 +1,6 @@
 ---
 title: Luma (tool)
-bookCollapseSection: true
+editURL: https://github.com/luanti-org/luma/edit/main/docs/_index.md
 ---
 
 > [!WARNING]
